@@ -1,195 +1,164 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
-type CharacterSetting = {
+type Character = {
+  id: string;
   name: string;
-  description: string;
-  personality: string;
-  speakingStyle: string;
-  worldview: string;
-  relationship: string;
-  rules: string;
-  firstMessage: string;
-};
-
-const defaultCharacter: CharacterSetting = {
-  name: "",
-  description: "",
-  personality: "",
-  speakingStyle: "",
-  worldview: "",
-  relationship: "",
-  rules: "",
-  firstMessage: "",
+  description: string | null;
+  personality: string | null;
+  speaking_style: string | null;
+  relationship: string | null;
+  first_message: string | null;
+  avatar_url: string | null;
+  updated_at: string;
 };
 
 export default function CharactersPage() {
-  const [character, setCharacter] =
-    useState<CharacterSetting>(defaultCharacter);
-  const [saved, setSaved] = useState(false);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedCharacter = localStorage.getItem("character_setting");
-
-    if (savedCharacter) {
-      setCharacter(JSON.parse(savedCharacter));
-    }
+    loadCharacters();
   }, []);
 
-  function updateField(key: keyof CharacterSetting, value: string) {
-    setCharacter((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+  async function loadCharacters() {
+    const { data: userData } = await supabase.auth.getUser();
 
-    setSaved(false);
+    if (!userData.user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("characters")
+      .select("*")
+      .eq("user_id", userData.user.id)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      alert("캐릭터 목록을 불러오지 못했습니다.");
+    } else {
+      setCharacters(data || []);
+    }
+
+    setLoading(false);
   }
 
-  function saveCharacter() {
-    localStorage.setItem("character_setting", JSON.stringify(character));
-    setSaved(true);
+  async function deleteCharacter(id: string) {
+    const ok = confirm("이 캐릭터를 삭제할까요?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("characters")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+      alert("삭제 중 오류가 발생했습니다.");
+      return;
+    }
+
+    await loadCharacters();
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        불러오는 중...
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-black text-white p-4">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">캐릭터 설정</h1>
-          <p className="text-zinc-400 mt-2">
-            채팅에 사용할 캐릭터와 세계관을 작성하세요.
-          </p>
-        </div>
-
-        <div className="space-y-4">
-          <InputBox
-            label="캐릭터 이름"
-            value={character.name}
-            onChange={(value) => updateField("name", value)}
-            placeholder="예: 리아"
-          />
-
-          <TextAreaBox
-            label="캐릭터 설명"
-            value={character.description}
-            onChange={(value) => updateField("description", value)}
-            placeholder="예: 밝고 다정하지만 가끔 장난기가 많은 캐릭터"
-          />
-
-          <TextAreaBox
-            label="성격"
-            value={character.personality}
-            onChange={(value) => updateField("personality", value)}
-            placeholder="예: 다정함, 질투가 있음, 감정 표현이 풍부함"
-          />
-
-          <TextAreaBox
-            label="말투"
-            value={character.speakingStyle}
-            onChange={(value) => updateField("speakingStyle", value)}
-            placeholder="예: 친한 친구처럼 반말, 부드럽고 자연스럽게"
-          />
-
-          <TextAreaBox
-            label="세계관"
-            value={character.worldview}
-            onChange={(value) => updateField("worldview", value)}
-            placeholder="예: 현대 도시 배경의 일상 세계관"
-          />
-
-          <TextAreaBox
-            label="사용자와의 관계"
-            value={character.relationship}
-            onChange={(value) => updateField("relationship", value)}
-            placeholder="예: 오래 알고 지낸 친구"
-          />
-
-          <TextAreaBox
-            label="규칙 / 금지 설정"
-            value={character.rules}
-            onChange={(value) => updateField("rules", value)}
-            placeholder="예: 세계관을 깨지 않는다. 설정과 다른 말투를 쓰지 않는다."
-          />
-
-          <TextAreaBox
-            label="첫 메시지"
-            value={character.firstMessage}
-            onChange={(value) => updateField("firstMessage", value)}
-            placeholder="예: 왔어? 오늘은 좀 늦었네."
-          />
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={saveCharacter}
-            className="bg-blue-600 px-5 py-3 rounded-xl font-medium"
-          >
-            저장하기
-          </button>
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">캐릭터 리스트</h1>
+            <p className="text-zinc-400 text-sm mt-1">
+              대화에 사용할 캐릭터를 만들고 관리합니다.
+            </p>
+          </div>
 
           <a
-            href="/chat"
-            className="bg-zinc-800 px-5 py-3 rounded-xl font-medium"
+            href="/characters/new"
+            className="bg-blue-600 px-5 py-3 rounded-xl font-medium"
           >
-            채팅으로 이동
+            + 새 캐릭터
           </a>
         </div>
 
-        {saved && (
-          <div className="text-green-400 text-sm">
-            캐릭터 설정이 저장되었습니다.
+        {characters.length === 0 ? (
+          <div className="border border-zinc-800 rounded-2xl p-10 text-center">
+            <p className="text-zinc-400">아직 생성된 캐릭터가 없습니다.</p>
+            <a
+              href="/characters/new"
+              className="inline-block mt-5 bg-blue-600 px-5 py-3 rounded-xl"
+            >
+              첫 캐릭터 만들기
+            </a>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {characters.map((character) => (
+              <div
+                key={character.id}
+                className="border border-zinc-800 bg-zinc-950 rounded-2xl p-5 space-y-4"
+              >
+                <div className="flex gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center overflow-hidden shrink-0">
+                    {character.avatar_url ? (
+                      <img
+                        src={character.avatar_url}
+                        alt={character.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-xl">👤</span>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <h2 className="font-bold text-lg truncate">
+                      {character.name}
+                    </h2>
+                    <p className="text-sm text-zinc-400 line-clamp-2">
+                      {character.description || "설명 없음"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <a
+                    href={`/characters/${character.id}`}
+                    className="flex-1 bg-zinc-800 text-center rounded-xl py-3 text-sm"
+                  >
+                    수정
+                  </a>
+
+                  <button
+                    onClick={() => deleteCharacter(character.id)}
+                    className="bg-zinc-900 text-red-400 px-4 rounded-xl text-sm"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+
+        <a
+          href="/chat"
+          className="inline-block bg-zinc-800 px-5 py-3 rounded-xl text-sm"
+        >
+          채팅으로 돌아가기
+        </a>
       </div>
     </div>
-  );
-}
-
-function InputBox({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-sm text-zinc-300">{label}</span>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
-      />
-    </label>
-  );
-}
-
-function TextAreaBox({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-sm text-zinc-300">{label}</span>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={3}
-        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none resize-none"
-      />
-    </label>
   );
 }
