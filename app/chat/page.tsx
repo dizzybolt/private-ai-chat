@@ -14,6 +14,8 @@ type ChatRoom = {
   updated_at: string;
   persona_id: string | null;
   character_id: string | null;
+  worldview_id: string | null;
+  lorebook_id: string | null;
 };
 
 type Profile = {
@@ -48,20 +50,53 @@ type Persona = {
   is_default: boolean;
 };
 
+type Worldview = {
+  id: string;
+  title: string;
+  description: string | null;
+  setting: string | null;
+  rules: string | null;
+};
+
+type Lorebook = {
+  id: string;
+  title: string;
+  description: string | null;
+  worldview_id: string | null;
+};
+
+type LoreEntry = {
+  id: string;
+  title: string;
+  keywords: string | null;
+  content: string;
+  always_enabled: boolean;
+  priority: number;
+};
+
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [worldviews, setWorldviews] = useState<Worldview[]>([]);
+  const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
 
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
     null
   );
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
+  const [selectedWorldview, setSelectedWorldview] =
+    useState<Worldview | null>(null);
+  const [selectedLorebook, setSelectedLorebook] = useState<Lorebook | null>(
+    null
+  );
 
   const [newCharacterId, setNewCharacterId] = useState("");
   const [newPersonaId, setNewPersonaId] = useState("");
+  const [newWorldviewId, setNewWorldviewId] = useState("");
+  const [newLorebookId, setNewLorebookId] = useState("");
 
   const [roomId, setRoomId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -99,14 +134,22 @@ export default function ChatPage() {
 
       setProfile(profileData);
 
-      await loadCharacters(user.id);
-      await loadPersonas(user.id);
+      const loadedCharacters = await loadCharacters(user.id);
+      const loadedPersonas = await loadPersonas(user.id);
+      const loadedWorldviews = await loadWorldviews(user.id);
+      const loadedLorebooks = await loadLorebooks(user.id);
+
       await loadRooms(user.id);
 
       const savedRoomId = localStorage.getItem(`current_room_id_${user.id}`);
 
       if (savedRoomId) {
-        await loadRoom(savedRoomId);
+        await loadRoom(savedRoomId, {
+          characters: loadedCharacters,
+          personas: loadedPersonas,
+          worldviews: loadedWorldviews,
+          lorebooks: loadedLorebooks,
+        });
       }
     } finally {
       setInitializing(false);
@@ -120,7 +163,9 @@ export default function ChatPage() {
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
 
-    setCharacters(data || []);
+    const result = (data || []) as Character[];
+    setCharacters(result);
+    return result;
   }
 
   async function loadPersonas(userId: string) {
@@ -131,7 +176,33 @@ export default function ChatPage() {
       .order("is_default", { ascending: false })
       .order("updated_at", { ascending: false });
 
-    setPersonas(data || []);
+    const result = (data || []) as Persona[];
+    setPersonas(result);
+    return result;
+  }
+
+  async function loadWorldviews(userId: string) {
+    const { data } = await supabase
+      .from("worldviews")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+
+    const result = (data || []) as Worldview[];
+    setWorldviews(result);
+    return result;
+  }
+
+  async function loadLorebooks(userId: string) {
+    const { data } = await supabase
+      .from("lorebooks")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+
+    const result = (data || []) as Lorebook[];
+    setLorebooks(result);
+    return result;
   }
 
   async function loadRooms(userId?: string) {
@@ -140,14 +211,24 @@ export default function ChatPage() {
 
     const { data } = await supabase
       .from("chat_rooms")
-      .select("id, title, updated_at, persona_id, character_id")
+      .select(
+        "id, title, updated_at, persona_id, character_id, worldview_id, lorebook_id"
+      )
       .eq("user_id", targetUserId)
       .order("updated_at", { ascending: false });
 
-    setRooms(data || []);
+    setRooms((data || []) as ChatRoom[]);
   }
 
-  async function loadRoom(selectedRoomId: string) {
+  async function loadRoom(
+    selectedRoomId: string,
+    lists?: {
+      characters: Character[];
+      personas: Persona[];
+      worldviews: Worldview[];
+      lorebooks: Lorebook[];
+    }
+  ) {
     setRoomId(selectedRoomId);
 
     if (profile?.id) {
@@ -156,7 +237,7 @@ export default function ChatPage() {
 
     const { data: roomData, error: roomError } = await supabase
       .from("chat_rooms")
-      .select("id, persona_id, character_id")
+      .select("id, persona_id, character_id, worldview_id, lorebook_id")
       .eq("id", selectedRoomId)
       .single();
 
@@ -165,13 +246,23 @@ export default function ChatPage() {
       return;
     }
 
-    const character =
-      characters.find((item) => item.id === roomData.character_id) || null;
-    const persona =
-      personas.find((item) => item.id === roomData.persona_id) || null;
+    const characterList = lists?.characters || characters;
+    const personaList = lists?.personas || personas;
+    const worldviewList = lists?.worldviews || worldviews;
+    const lorebookList = lists?.lorebooks || lorebooks;
 
-    setSelectedCharacter(character);
-    setSelectedPersona(persona);
+    setSelectedCharacter(
+      characterList.find((item) => item.id === roomData.character_id) || null
+    );
+    setSelectedPersona(
+      personaList.find((item) => item.id === roomData.persona_id) || null
+    );
+    setSelectedWorldview(
+      worldviewList.find((item) => item.id === roomData.worldview_id) || null
+    );
+    setSelectedLorebook(
+      lorebookList.find((item) => item.id === roomData.lorebook_id) || null
+    );
 
     const { data: messageData, error: messageError } = await supabase
       .from("chat_messages")
@@ -187,6 +278,10 @@ export default function ChatPage() {
     setMessages((messageData || []) as ChatMessage[]);
   }
 
+  function getLorebooksByWorldview(worldviewId: string) {
+    return lorebooks.filter((lorebook) => lorebook.worldview_id === worldviewId);
+  }
+
   function openNewChatModal() {
     if (personas.length === 0) {
       alert("먼저 페르소나를 만들어주세요.");
@@ -200,20 +295,42 @@ export default function ChatPage() {
       return;
     }
 
+    if (worldviews.length === 0) {
+      alert("먼저 세계관을 만들어주세요.");
+      window.location.href = "/worldviews";
+      return;
+    }
+
     const defaultPersona =
       personas.find((persona) => persona.is_default) || personas[0];
 
+    const firstWorldview = worldviews[0];
+    const matchedLorebooks = getLorebooksByWorldview(firstWorldview.id);
+
     setNewPersonaId(defaultPersona.id);
     setNewCharacterId(characters[0].id);
+    setNewWorldviewId(firstWorldview.id);
+    setNewLorebookId(matchedLorebooks[0]?.id || "");
     setNewChatModalOpen(true);
   }
 
+  function handleWorldviewChange(worldviewId: string) {
+    setNewWorldviewId(worldviewId);
+
+    const matchedLorebooks = getLorebooksByWorldview(worldviewId);
+    setNewLorebookId(matchedLorebooks[0]?.id || "");
+  }
+
   async function createRoomWithSelection() {
-    if (!profile || !newPersonaId || !newCharacterId) return;
+    if (!profile || !newPersonaId || !newCharacterId || !newWorldviewId) return;
 
     const character =
       characters.find((item) => item.id === newCharacterId) || null;
     const persona = personas.find((item) => item.id === newPersonaId) || null;
+    const worldview =
+      worldviews.find((item) => item.id === newWorldviewId) || null;
+    const lorebook =
+      lorebooks.find((item) => item.id === newLorebookId) || null;
 
     const { data, error } = await supabase
       .from("chat_rooms")
@@ -221,6 +338,8 @@ export default function ChatPage() {
         user_id: profile.id,
         persona_id: newPersonaId,
         character_id: newCharacterId,
+        worldview_id: newWorldviewId,
+        lorebook_id: newLorebookId || null,
         title: character?.name ? `${character.name}와의 대화` : "새 채팅",
       })
       .select("id")
@@ -237,6 +356,8 @@ export default function ChatPage() {
     setRoomId(data.id);
     setSelectedCharacter(character);
     setSelectedPersona(persona);
+    setSelectedWorldview(worldview);
+    setSelectedLorebook(lorebook);
     setNewChatModalOpen(false);
     setSidebarOpen(false);
 
@@ -259,6 +380,44 @@ export default function ChatPage() {
     }
 
     await loadRooms(profile.id);
+  }
+
+  async function getRelevantLoreEntries(updatedMessages: ChatMessage[]) {
+    if (!selectedLorebook) return [];
+
+    const { data, error } = await supabase
+      .from("lore_entries")
+      .select("id, title, keywords, content, always_enabled, priority")
+      .eq("lorebook_id", selectedLorebook.id)
+      .order("priority", { ascending: false });
+
+    if (error) {
+      console.error("로어 항목 조회 오류:", error);
+      return [];
+    }
+
+    const entries = (data || []) as LoreEntry[];
+
+    const recentText = updatedMessages
+      .slice(-8)
+      .map((message) => message.content)
+      .join("\n")
+      .toLowerCase();
+
+    const matched = entries.filter((entry) => {
+      if (entry.always_enabled) return true;
+
+      if (!entry.keywords) return false;
+
+      const keywords = entry.keywords
+        .split(/[,，\n]/)
+        .map((keyword) => keyword.trim().toLowerCase())
+        .filter(Boolean);
+
+      return keywords.some((keyword) => recentText.includes(keyword));
+    });
+
+    return matched.slice(0, 8);
   }
 
   async function deleteRoom(deleteRoomId: string) {
@@ -284,6 +443,8 @@ export default function ChatPage() {
       setMessages([]);
       setSelectedCharacter(null);
       setSelectedPersona(null);
+      setSelectedWorldview(null);
+      setSelectedLorebook(null);
     }
 
     await loadRooms(profile.id);
@@ -312,6 +473,8 @@ export default function ChatPage() {
     });
 
     try {
+      const relevantLoreEntries = await getRelevantLoreEntries(updatedMessages);
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -321,6 +484,8 @@ export default function ChatPage() {
           messages: updatedMessages,
           character: selectedCharacter,
           persona: selectedPersona,
+          worldview: selectedWorldview,
+          loreEntries: relevantLoreEntries,
         }),
       });
 
@@ -369,6 +534,10 @@ export default function ChatPage() {
       </div>
     );
   }
+
+  const modalLorebooks = newWorldviewId
+    ? getLorebooksByWorldview(newWorldviewId)
+    : [];
 
   return (
     <div className="h-screen bg-black text-white flex relative overflow-hidden">
@@ -432,6 +601,20 @@ export default function ChatPage() {
             페르소나 설정
           </a>
 
+          <a
+            href="/worldviews"
+            className="block w-full bg-zinc-800 text-center rounded-xl py-3 text-sm"
+          >
+            세계관 설정
+          </a>
+
+          <a
+            href="/lorebooks"
+            className="block w-full bg-zinc-800 text-center rounded-xl py-3 text-sm"
+          >
+            로어북 설정
+          </a>
+
           <button
             onClick={logout}
             className="w-full bg-zinc-900 text-zinc-300 rounded-xl py-3 text-sm"
@@ -466,8 +649,10 @@ export default function ChatPage() {
             </h1>
 
             <p className="text-sm text-zinc-400 truncate">
-              {selectedPersona?.name
-                ? `페르소나: ${selectedPersona.name}`
+              {selectedPersona?.name || selectedWorldview?.title
+                ? `페르소나: ${selectedPersona?.name || "-"} / 세계관: ${
+                    selectedWorldview?.title || "-"
+                  } / 로어북: ${selectedLorebook?.title || "없음"}`
                 : "새 채팅을 시작해 주세요."}
             </p>
           </div>
@@ -476,7 +661,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="text-zinc-500 text-sm text-center mt-20">
-              새 채팅을 눌러 페르소나와 캐릭터를 선택하세요.
+              새 채팅을 눌러 페르소나, 캐릭터, 세계관, 로어북을 선택하세요.
             </div>
           )}
 
@@ -528,7 +713,7 @@ export default function ChatPage() {
             <div>
               <h2 className="text-xl font-bold">새 채팅 시작</h2>
               <p className="text-sm text-zinc-400 mt-1">
-                사용할 페르소나와 캐릭터를 선택하세요.
+                사용할 페르소나, 캐릭터, 세계관, 로어북을 선택하세요.
               </p>
             </div>
 
@@ -558,6 +743,38 @@ export default function ChatPage() {
                 {characters.map((character) => (
                   <option key={character.id} value={character.id}>
                     {character.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm text-zinc-300">세계관</span>
+              <select
+                value={newWorldviewId}
+                onChange={(e) => handleWorldviewChange(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
+              >
+                {worldviews.map((worldview) => (
+                  <option key={worldview.id} value={worldview.id}>
+                    {worldview.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm text-zinc-300">로어북</span>
+              <select
+                value={newLorebookId}
+                onChange={(e) => setNewLorebookId(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
+              >
+                <option value="">로어북 없음</option>
+
+                {modalLorebooks.map((lorebook) => (
+                  <option key={lorebook.id} value={lorebook.id}>
+                    {lorebook.title}
                   </option>
                 ))}
               </select>
