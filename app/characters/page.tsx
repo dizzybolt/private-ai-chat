@@ -152,12 +152,21 @@ export default function CharactersPage() {
           </div>
         )}
 
-        <a
-          href="/chat"
-          className="inline-block bg-zinc-800 px-5 py-3 rounded-xl text-sm"
-        >
-          채팅으로 돌아가기
-        </a>
+        <div className="flex gap-2">
+  <a
+    href="/chat"
+    className="inline-block bg-zinc-800 px-5 py-3 rounded-xl text-sm"
+  >
+    채팅으로 돌아가기
+  </a>
+
+  <a
+    href="/personas"
+    className="inline-block bg-zinc-800 px-5 py-3 rounded-xl text-sm"
+  >
+    페르소나 관리
+  </a>
+</div>
       </div>
     </div>
   );
