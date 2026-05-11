@@ -8,21 +8,12 @@ type ChatMessage = {
   content: string;
 };
 
-type CharacterSetting = {
-  name: string;
-  description: string;
-  personality: string;
-  speakingStyle: string;
-  worldview: string;
-  relationship: string;
-  rules: string;
-  firstMessage: string;
-};
-
 type ChatRoom = {
   id: string;
   title: string;
   updated_at: string;
+  persona_id: string | null;
+  character_id: string | null;
 };
 
 type Profile = {
@@ -33,16 +24,52 @@ type Profile = {
   is_active: boolean;
 };
 
+type Character = {
+  id: string;
+  name: string;
+  description: string | null;
+  personality: string | null;
+  speaking_style: string | null;
+  relationship: string | null;
+  first_message: string | null;
+  avatar_url: string | null;
+};
+
+type Persona = {
+  id: string;
+  name: string;
+  description: string | null;
+  personality: string | null;
+  speaking_style: string | null;
+  appearance: string | null;
+  background: string | null;
+  relationship_style: string | null;
+  additional_settings: string | null;
+  is_default: boolean;
+};
+
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
-  const [character, setCharacter] = useState<CharacterSetting | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>([]);
+
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
+    null
+  );
+  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
+
+  const [newCharacterId, setNewCharacterId] = useState("");
+  const [newPersonaId, setNewPersonaId] = useState("");
+
   const [roomId, setRoomId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [newChatModalOpen, setNewChatModalOpen] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -72,18 +99,11 @@ export default function ChatPage() {
 
       setProfile(profileData);
 
-      const savedCharacter = localStorage.getItem("character_setting");
-      if (savedCharacter) {
-        setCharacter(JSON.parse(savedCharacter));
-      }
-
+      await loadCharacters(user.id);
+      await loadPersonas(user.id);
       await loadRooms(user.id);
 
-      let savedRoomId = localStorage.getItem(`current_room_id_${user.id}`);
-
-      if (!savedRoomId) {
-        savedRoomId = await createNewRoom(user.id);
-      }
+      const savedRoomId = localStorage.getItem(`current_room_id_${user.id}`);
 
       if (savedRoomId) {
         await loadRoom(savedRoomId);
@@ -93,43 +113,38 @@ export default function ChatPage() {
     }
   }
 
+  async function loadCharacters(userId: string) {
+    const { data } = await supabase
+      .from("characters")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+
+    setCharacters(data || []);
+  }
+
+  async function loadPersonas(userId: string) {
+    const { data } = await supabase
+      .from("user_personas")
+      .select("*")
+      .eq("user_id", userId)
+      .order("is_default", { ascending: false })
+      .order("updated_at", { ascending: false });
+
+    setPersonas(data || []);
+  }
+
   async function loadRooms(userId?: string) {
     const targetUserId = userId || profile?.id;
     if (!targetUserId) return;
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("chat_rooms")
-      .select("id, title, updated_at")
+      .select("id, title, updated_at, persona_id, character_id")
       .eq("user_id", targetUserId)
       .order("updated_at", { ascending: false });
 
-    if (!error && data) {
-      setRooms(data);
-    }
-  }
-
-  async function createNewRoom(userId?: string) {
-    const targetUserId = userId || profile?.id;
-    if (!targetUserId) return null;
-
-    const { data, error } = await supabase
-      .from("chat_rooms")
-      .insert({
-        title: "새 채팅",
-        user_id: targetUserId,
-      })
-      .select("id")
-      .single();
-
-    if (error || !data) {
-      console.error(error);
-      return null;
-    }
-
-    localStorage.setItem(`current_room_id_${targetUserId}`, data.id);
-    await loadRooms(targetUserId);
-
-    return data.id;
+    setRooms(data || []);
   }
 
   async function loadRoom(selectedRoomId: string) {
@@ -139,40 +154,102 @@ export default function ChatPage() {
       localStorage.setItem(`current_room_id_${profile.id}`, selectedRoomId);
     }
 
-    const { data, error } = await supabase
+    const { data: roomData, error: roomError } = await supabase
+      .from("chat_rooms")
+      .select("id, persona_id, character_id")
+      .eq("id", selectedRoomId)
+      .single();
+
+    if (roomError || !roomData) {
+      console.error(roomError);
+      return;
+    }
+
+    const character =
+      characters.find((item) => item.id === roomData.character_id) || null;
+    const persona =
+      personas.find((item) => item.id === roomData.persona_id) || null;
+
+    setSelectedCharacter(character);
+    setSelectedPersona(persona);
+
+    const { data: messageData, error: messageError } = await supabase
       .from("chat_messages")
       .select("role, content")
       .eq("room_id", selectedRoomId)
       .order("created_at", { ascending: true });
 
-    if (error) {
-      console.error(error);
+    if (messageError) {
+      console.error(messageError);
       return;
     }
 
-    if (data) {
-      setMessages(data as ChatMessage[]);
-    }
+    setMessages((messageData || []) as ChatMessage[]);
   }
 
-  async function startNewChat() {
-    if (!profile) return;
+  function openNewChatModal() {
+    if (personas.length === 0) {
+      alert("먼저 페르소나를 만들어주세요.");
+      window.location.href = "/personas";
+      return;
+    }
 
-    const newRoomId = await createNewRoom(profile.id);
-    if (!newRoomId) return;
+    if (characters.length === 0) {
+      alert("먼저 캐릭터를 만들어주세요.");
+      window.location.href = "/characters";
+      return;
+    }
 
-    setRoomId(newRoomId);
+    const defaultPersona =
+      personas.find((persona) => persona.is_default) || personas[0];
 
-    if (character?.firstMessage) {
+    setNewPersonaId(defaultPersona.id);
+    setNewCharacterId(characters[0].id);
+    setNewChatModalOpen(true);
+  }
+
+  async function createRoomWithSelection() {
+    if (!profile || !newPersonaId || !newCharacterId) return;
+
+    const character =
+      characters.find((item) => item.id === newCharacterId) || null;
+    const persona = personas.find((item) => item.id === newPersonaId) || null;
+
+    const { data, error } = await supabase
+      .from("chat_rooms")
+      .insert({
+        user_id: profile.id,
+        persona_id: newPersonaId,
+        character_id: newCharacterId,
+        title: character?.name ? `${character.name}와의 대화` : "새 채팅",
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      console.error(error);
+      alert("새 채팅 생성 중 오류가 발생했습니다.");
+      return;
+    }
+
+    localStorage.setItem(`current_room_id_${profile.id}`, data.id);
+
+    setRoomId(data.id);
+    setSelectedCharacter(character);
+    setSelectedPersona(persona);
+    setNewChatModalOpen(false);
+    setSidebarOpen(false);
+
+    if (character?.first_message) {
       const firstMessage: ChatMessage = {
         role: "assistant",
-        content: character.firstMessage,
+        content: character.first_message,
       };
 
       setMessages([firstMessage]);
 
       await supabase.from("chat_messages").insert({
-        room_id: newRoomId,
+        room_id: data.id,
         user_id: profile.id,
         role: firstMessage.role,
         content: firstMessage.content,
@@ -182,7 +259,6 @@ export default function ChatPage() {
     }
 
     await loadRooms(profile.id);
-    setSidebarOpen(false);
   }
 
   async function deleteRoom(deleteRoomId: string) {
@@ -197,25 +273,17 @@ export default function ChatPage() {
       .eq("id", deleteRoomId);
 
     if (error) {
-      console.error("채팅방 삭제 오류:", error);
+      console.error(error);
       alert("삭제 중 오류가 발생했습니다.");
       return;
     }
 
     if (deleteRoomId === roomId) {
       localStorage.removeItem(`current_room_id_${profile.id}`);
+      setRoomId(null);
       setMessages([]);
-
-      const remainingRooms = rooms.filter((room) => room.id !== deleteRoomId);
-
-      if (remainingRooms.length > 0) {
-        await loadRoom(remainingRooms[0].id);
-      } else {
-        const newRoomId = await createNewRoom(profile.id);
-        if (newRoomId) {
-          setRoomId(newRoomId);
-        }
-      }
+      setSelectedCharacter(null);
+      setSelectedPersona(null);
     }
 
     await loadRooms(profile.id);
@@ -230,11 +298,9 @@ export default function ChatPage() {
     };
 
     const updatedMessages = [...messages, userMessage];
-
-    setMessages(updatedMessages);
-
     const currentInput = input;
 
+    setMessages(updatedMessages);
     setInput("");
     setLoading(true);
 
@@ -253,7 +319,8 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           messages: updatedMessages,
-          character,
+          character: selectedCharacter,
+          persona: selectedPersona,
         }),
       });
 
@@ -284,6 +351,7 @@ export default function ChatPage() {
       await loadRooms(profile.id);
     } catch (error) {
       console.error(error);
+      alert("AI 응답 생성 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -311,7 +379,7 @@ export default function ChatPage() {
       >
         <div className="p-4 border-b border-zinc-800">
           <button
-            onClick={startNewChat}
+            onClick={openNewChatModal}
             className="w-full bg-blue-600 rounded-xl py-3 font-medium"
           >
             + 새 채팅
@@ -357,6 +425,13 @@ export default function ChatPage() {
             캐릭터 설정
           </a>
 
+          <a
+            href="/personas"
+            className="block w-full bg-zinc-800 text-center rounded-xl py-3 text-sm"
+          >
+            페르소나 설정
+          </a>
+
           <button
             onClick={logout}
             className="w-full bg-zinc-900 text-zinc-300 rounded-xl py-3 text-sm"
@@ -364,9 +439,7 @@ export default function ChatPage() {
             로그아웃
           </button>
 
-          <p className="text-xs text-zinc-500 truncate">
-            {profile?.email}
-          </p>
+          <p className="text-xs text-zinc-500 truncate">{profile?.email}</p>
         </div>
       </div>
 
@@ -389,23 +462,29 @@ export default function ChatPage() {
 
           <div className="min-w-0">
             <h1 className="font-bold text-lg truncate">
-              {character?.name || "AI 채팅"}
+              {selectedCharacter?.name || "AI 채팅"}
             </h1>
 
             <p className="text-sm text-zinc-400 truncate">
-              {character?.description || "캐릭터 설명"}
+              {selectedPersona?.name
+                ? `페르소나: ${selectedPersona.name}`
+                : "새 채팅을 시작해 주세요."}
             </p>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="text-zinc-500 text-sm text-center mt-20">
+              새 채팅을 눌러 페르소나와 캐릭터를 선택하세요.
+            </div>
+          )}
+
           {messages.map((msg, index) => (
             <div
               key={index}
               className={`max-w-[80%] whitespace-pre-wrap p-3 rounded-2xl ${
-                msg.role === "user"
-                  ? "bg-blue-600 ml-auto"
-                  : "bg-zinc-800"
+                msg.role === "user" ? "bg-blue-600 ml-auto" : "bg-zinc-800"
               }`}
             >
               {msg.content}
@@ -423,20 +502,85 @@ export default function ChatPage() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="메시지를 입력하세요..."
-            className="flex-1 bg-zinc-900 rounded-xl px-4 py-3 outline-none"
+            placeholder={
+              roomId ? "메시지를 입력하세요..." : "새 채팅을 먼저 시작하세요"
+            }
+            disabled={!roomId || loading}
+            className="flex-1 bg-zinc-900 rounded-xl px-4 py-3 outline-none disabled:text-zinc-500"
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                sendMessage();
-              }
+              if (e.key === "Enter") sendMessage();
             }}
           />
 
-          <button onClick={sendMessage} className="bg-blue-600 px-5 rounded-xl">
+          <button
+            onClick={sendMessage}
+            disabled={!roomId || loading}
+            className="bg-blue-600 px-5 rounded-xl disabled:bg-zinc-700"
+          >
             전송
           </button>
         </div>
       </div>
+
+      {newChatModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-5 space-y-5">
+            <div>
+              <h2 className="text-xl font-bold">새 채팅 시작</h2>
+              <p className="text-sm text-zinc-400 mt-1">
+                사용할 페르소나와 캐릭터를 선택하세요.
+              </p>
+            </div>
+
+            <label className="block space-y-2">
+              <span className="text-sm text-zinc-300">페르소나</span>
+              <select
+                value={newPersonaId}
+                onChange={(e) => setNewPersonaId(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
+              >
+                {personas.map((persona) => (
+                  <option key={persona.id} value={persona.id}>
+                    {persona.name}
+                    {persona.is_default ? " (기본)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm text-zinc-300">캐릭터</span>
+              <select
+                value={newCharacterId}
+                onChange={(e) => setNewCharacterId(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
+              >
+                {characters.map((character) => (
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex gap-3">
+              <button
+                onClick={createRoomWithSelection}
+                className="flex-1 bg-blue-600 rounded-xl py-3 font-medium"
+              >
+                시작하기
+              </button>
+
+              <button
+                onClick={() => setNewChatModalOpen(false)}
+                className="flex-1 bg-zinc-800 rounded-xl py-3 font-medium"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
