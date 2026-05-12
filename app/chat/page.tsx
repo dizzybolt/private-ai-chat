@@ -6,6 +6,8 @@ import { supabase } from "../../lib/supabase";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  speaker_name?: string | null;
+  message_type?: "chat" | "narration" | "system" | null;
 };
 
 type ChatRoom = {
@@ -266,7 +268,7 @@ export default function ChatPage() {
 
     const { data: messageData, error: messageError } = await supabase
       .from("chat_messages")
-      .select("role, content")
+      .select("role, content, speaker_name, message_type")
       .eq("room_id", selectedRoomId)
       .order("created_at", { ascending: true });
 
@@ -361,23 +363,44 @@ export default function ChatPage() {
     setNewChatModalOpen(false);
     setSidebarOpen(false);
 
-    if (character?.first_message) {
-      const firstMessage: ChatMessage = {
-        role: "assistant",
-        content: character.first_message,
-      };
+    const narrationMessage: ChatMessage = {
+  role: "assistant",
+  content: `${persona?.name || "사용자"}와 ${character?.name || "캐릭터"}의 대화가 시작되었다. 배경은 ${worldview?.title || "알 수 없는 세계"}이다.`,
+};
 
-      setMessages([firstMessage]);
+const firstMessages: ChatMessage[] = [narrationMessage];
 
-      await supabase.from("chat_messages").insert({
-        room_id: data.id,
-        user_id: profile.id,
-        role: firstMessage.role,
-        content: firstMessage.content,
-      });
-    } else {
-      setMessages([]);
-    }
+if (character?.first_message) {
+  firstMessages.push({
+    role: "assistant",
+    content: character.first_message,
+  });
+}
+
+setMessages(firstMessages);
+
+await supabase.from("chat_messages").insert([
+  {
+    room_id: data.id,
+    user_id: profile.id,
+    role: "assistant",
+    speaker_name: "내레이션",
+    message_type: "narration",
+    content: narrationMessage.content,
+  },
+  ...(character?.first_message
+    ? [
+        {
+          room_id: data.id,
+          user_id: profile.id,
+          role: "assistant",
+          speaker_name: character.name,
+          message_type: "chat",
+          content: character.first_message,
+        },
+      ]
+    : []),
+]);
 
     await loadRooms(profile.id);
   }
@@ -456,6 +479,8 @@ export default function ChatPage() {
     const userMessage: ChatMessage = {
       role: "user",
       content: input,
+      speaker_name: selectedPersona?.name || "나",
+      message_type: "chat",
     };
 
     const updatedMessages = [...messages, userMessage];
@@ -466,11 +491,13 @@ export default function ChatPage() {
     setLoading(true);
 
     await supabase.from("chat_messages").insert({
-      room_id: roomId,
-      user_id: profile.id,
-      role: userMessage.role,
-      content: userMessage.content,
-    });
+  room_id: roomId,
+  user_id: profile.id,
+  role: userMessage.role,
+  speaker_name: userMessage.speaker_name,
+  message_type: userMessage.message_type,
+  content: userMessage.content,
+});
 
     try {
       const relevantLoreEntries = await getRelevantLoreEntries(updatedMessages);
@@ -492,18 +519,22 @@ export default function ChatPage() {
       const data = await response.json();
 
       const aiMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message || "응답 생성 실패",
-      };
+  role: "assistant",
+  content: data.message || "응답 생성 실패",
+  speaker_name: selectedCharacter?.name || "AI",
+  message_type: "chat",
+};
 
       setMessages((prev) => [...prev, aiMessage]);
 
       await supabase.from("chat_messages").insert({
-        room_id: roomId,
-        user_id: profile.id,
-        role: aiMessage.role,
-        content: aiMessage.content,
-      });
+  room_id: roomId,
+  user_id: profile.id,
+  role: aiMessage.role,
+  speaker_name: aiMessage.speaker_name,
+  message_type: aiMessage.message_type,
+  content: aiMessage.content,
+});
 
       await supabase
         .from("chat_rooms")
@@ -665,16 +696,42 @@ export default function ChatPage() {
             </div>
           )}
 
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`max-w-[80%] whitespace-pre-wrap p-3 rounded-2xl ${
-                msg.role === "user" ? "bg-blue-600 ml-auto" : "bg-zinc-800"
-              }`}
-            >
-              {msg.content}
-            </div>
-          ))}
+          {messages.map((msg, index) => {
+  if (msg.message_type === "narration") {
+    return (
+      <div key={index} className="flex justify-center">
+        <div className="max-w-[90%] bg-zinc-900 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  const isUser = msg.role === "user";
+
+  return (
+    <div
+      key={index}
+      className={`max-w-[80%] ${isUser ? "ml-auto" : "mr-auto"}`}
+    >
+      <div
+        className={`text-xs mb-1 ${
+          isUser ? "text-right text-blue-300" : "text-zinc-400"
+        }`}
+      >
+        {msg.speaker_name || (isUser ? "나" : selectedCharacter?.name || "AI")}
+      </div>
+
+      <div
+        className={`whitespace-pre-wrap p-3 rounded-2xl ${
+          isUser ? "bg-blue-600" : "bg-zinc-800"
+        }`}
+      >
+        {msg.content}
+      </div>
+    </div>
+  );
+})}
 
           {loading && (
             <div className="bg-zinc-800 p-3 rounded-2xl max-w-[80%] text-zinc-400">
