@@ -697,34 +697,42 @@ await supabase.from("chat_messages").insert([
           )}
 
           {messages.map((msg, index) => {
-  if (msg.message_type === "narration") {
+  const isNarration = msg.message_type === "narration";
+  const isUser = msg.role === "user";
+
+  if (isNarration) {
     return (
       <div key={index} className="flex justify-center">
-        <div className="max-w-[90%] bg-zinc-900 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap">
+        <div className="max-w-[92%] bg-zinc-950 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed">
+          <div className="text-xs text-zinc-500 text-center mb-1">
+            내레이션
+          </div>
           {msg.content}
         </div>
       </div>
     );
   }
 
-  const isUser = msg.role === "user";
-
   return (
     <div
       key={index}
-      className={`max-w-[80%] ${isUser ? "ml-auto" : "mr-auto"}`}
+      className={`flex flex-col max-w-[80%] ${
+        isUser ? "ml-auto items-end" : "mr-auto items-start"
+      }`}
     >
       <div
-        className={`text-xs mb-1 ${
-          isUser ? "text-right text-blue-300" : "text-zinc-400"
+        className={`text-xs mb-1 px-1 ${
+          isUser ? "text-blue-300 text-right" : "text-zinc-400"
         }`}
       >
         {msg.speaker_name || (isUser ? "나" : selectedCharacter?.name || "AI")}
       </div>
 
       <div
-        className={`whitespace-pre-wrap p-3 rounded-2xl ${
-          isUser ? "bg-blue-600" : "bg-zinc-800"
+        className={`whitespace-pre-wrap p-3 rounded-2xl leading-relaxed ${
+          isUser
+            ? "bg-blue-600 text-white rounded-br-md"
+            : "bg-zinc-800 text-white rounded-bl-md"
         }`}
       >
         {msg.content}
