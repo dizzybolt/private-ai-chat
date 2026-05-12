@@ -167,8 +167,7 @@ export async function POST(req: Request) {
             },
             ...recentMessages,
           ],
-          temperature: 0.9,
-          top_p: 0.9,
+          temperature: 0.8,
         }),
       }
     );
