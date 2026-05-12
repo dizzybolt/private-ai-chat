@@ -1,6 +1,8 @@
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  speaker_name?: string | null;
+  message_type?: "chat" | "narration" | "system" | null;
 };
 
 type CharacterSetting = {
@@ -136,7 +138,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const recentMessages = messages.slice(-20);
+    const recentMessages = messages
+  .slice(-20)
+  .map((message: ChatMessage) => ({
+    role: message.role,
+    content: message.content,
+  }));
 
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
