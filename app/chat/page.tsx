@@ -707,7 +707,7 @@ await supabase.from("chat_messages").insert([
           <div className="text-xs text-zinc-500 text-center mb-1">
             내레이션
           </div>
-          {msg.content}
+          {renderRoleplayContent(msg.content)}
         </div>
       </div>
     );
@@ -735,7 +735,7 @@ await supabase.from("chat_messages").insert([
             : "bg-zinc-800 text-white rounded-bl-md"
         }`}
       >
-        {msg.content}
+        {renderRoleplayContent(msg.content)}
       </div>
     </div>
   );
@@ -863,6 +863,64 @@ await supabase.from("chat_messages").insert([
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function renderRoleplayContent(content: string) {
+  const parts = content.split(/(\*[^*]+\*|\([^()]+\)|"[^"]+")/g);
+
+  return (
+    <div className="space-y-1">
+      {parts.map((part, index) => {
+        if (!part) return null;
+
+        // 행동: *문을 연다*
+        if (part.startsWith("*") && part.endsWith("*")) {
+          return (
+            <div
+              key={index}
+              className="text-zinc-400 italic text-sm leading-relaxed"
+            >
+              {part.slice(1, -1)}
+            </div>
+          );
+        }
+
+        // 생각: (조금 어색하네)
+        if (part.startsWith("(") && part.endsWith(")")) {
+          return (
+            <div
+              key={index}
+              className="text-zinc-500 text-sm leading-relaxed"
+            >
+              ({part.slice(1, -1)})
+            </div>
+          );
+        }
+
+        // 대사: "안녕?"
+        if (part.startsWith('"') && part.endsWith('"')) {
+          return (
+            <div
+              key={index}
+              className="text-white leading-relaxed"
+            >
+              {part.slice(1, -1)}
+            </div>
+          );
+        }
+
+        // 아무것도 안 감싼 일반 문장 = 대사
+        return (
+          <div
+            key={index}
+            className="text-white leading-relaxed"
+          >
+            {part}
+          </div>
+        );
+      })}
     </div>
   );
 }
