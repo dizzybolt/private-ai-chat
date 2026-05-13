@@ -553,6 +553,82 @@ await supabase.from("chat_messages").insert([
     }
   }
 
+  async function regenerateLastAnswer() {
+  if (!roomId || !profile || loading) return;
+
+  const lastMessage = messages[messages.length - 1];
+
+  if (!lastMessage || lastMessage.role !== "assistant") {
+    alert("재생성할 AI 답변이 없습니다.");
+    return;
+  }
+
+  const messagesWithoutLastAi = messages.slice(0, -1);
+
+  setMessages(messagesWithoutLastAi);
+  setLoading(true);
+
+  try {
+    const relevantLoreEntries = await getRelevantLoreEntries(messagesWithoutLastAi);
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: messagesWithoutLastAi,
+        character: selectedCharacter,
+        persona: selectedPersona,
+        worldview: selectedWorldview,
+        loreEntries: relevantLoreEntries,
+      }),
+    });
+
+    const data = await response.json();
+
+    const newAiMessage: ChatMessage = {
+      role: "assistant",
+      content: data.message || "응답 생성 실패",
+      speaker_name: selectedCharacter?.name || "AI",
+      message_type: "chat",
+    };
+
+    setMessages((prev) => [...prev, newAiMessage]);
+
+    await supabase
+      .from("chat_messages")
+      .delete()
+      .eq("room_id", roomId)
+      .eq("role", "assistant")
+      .eq("content", lastMessage.content);
+
+    await supabase.from("chat_messages").insert({
+      room_id: roomId,
+      user_id: profile.id,
+      role: newAiMessage.role,
+      speaker_name: newAiMessage.speaker_name,
+      message_type: newAiMessage.message_type,
+      content: newAiMessage.content,
+    });
+
+    await supabase
+      .from("chat_rooms")
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", roomId);
+
+    await loadRooms(profile.id);
+  } catch (error) {
+    console.error(error);
+    alert("재생성 중 오류가 발생했습니다.");
+    setMessages(messages);
+  } finally {
+    setLoading(false);
+  }
+}
+
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -737,6 +813,16 @@ await supabase.from("chat_messages").insert([
       >
         {renderRoleplayContent(msg.content)}
       </div>
+
+      {!isUser && msg.message_type !== "narration" && index === messages.length - 1 && (
+  <button
+    onClick={regenerateLastAnswer}
+    disabled={loading}
+    className="mt-2 text-xs text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700"
+  >
+    ↻ 재생성
+  </button>
+)}
     </div>
   );
 })}
