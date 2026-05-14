@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 type ChatMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   speaker_name?: string | null;
   message_type?: "chat" | "narration" | "system" | null;
+  created_at?: string;
 };
 
 type ChatRoom = {
@@ -107,7 +109,9 @@ export default function ChatPage() {
   const [initializing, setInitializing] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
-
+  const [openMessageMenuIndex, setOpenMessageMenuIndex] = useState<number | null>(
+  null
+);
   useEffect(() => {
     initialize();
   }, []);
@@ -268,7 +272,7 @@ export default function ChatPage() {
 
     const { data: messageData, error: messageError } = await supabase
       .from("chat_messages")
-      .select("role, content, speaker_name, message_type")
+      .select("id, role, content, speaker_name, message_type, created_at")
       .eq("room_id", selectedRoomId)
       .order("created_at", { ascending: true });
 
@@ -474,30 +478,47 @@ await supabase.from("chat_messages").insert([
   }
 
   async function sendMessage() {
-    if (!input.trim() || loading || !roomId || !profile) return;
+    if (loading || !roomId || !profile) return;
 
-    const userMessage: ChatMessage = {
+const currentInput = input.trim();
+
+let updatedMessages = [...messages];
+
+setInput("");
+setLoading(true);
+
+if (currentInput) {
+  const userMessage: ChatMessage = {
+    role: "user",
+    content: currentInput,
+    speaker_name: selectedPersona?.name || "나",
+    message_type: "chat",
+  };
+
+  updatedMessages = [...messages, userMessage];
+
+  setMessages(updatedMessages);
+
+  await supabase.from("chat_messages").insert({
+    room_id: roomId,
+    user_id: profile.id,
+    role: userMessage.role,
+    speaker_name: userMessage.speaker_name,
+    message_type: userMessage.message_type,
+    content: userMessage.content,
+  });
+} else {
+  updatedMessages = [
+    ...messages,
+    {
       role: "user",
-      content: input,
+      content:
+        "이전 대화 흐름을 이어서 캐릭터가 자연스럽게 다음 반응을 해줘. 사용자가 새 말을 하지 않은 상황이므로, 캐릭터의 행동이나 짧은 대사로 장면을 이어가.",
       speaker_name: selectedPersona?.name || "나",
-      message_type: "chat",
-    };
-
-    const updatedMessages = [...messages, userMessage];
-    const currentInput = input;
-
-    setMessages(updatedMessages);
-    setInput("");
-    setLoading(true);
-
-    await supabase.from("chat_messages").insert({
-  room_id: roomId,
-  user_id: profile.id,
-  role: userMessage.role,
-  speaker_name: userMessage.speaker_name,
-  message_type: userMessage.message_type,
-  content: userMessage.content,
-});
+      message_type: "system",
+    },
+  ];
+}
 
     try {
       const relevantLoreEntries = await getRelevantLoreEntries(updatedMessages);
@@ -539,7 +560,7 @@ await supabase.from("chat_messages").insert([
       await supabase
         .from("chat_rooms")
         .update({
-          title: currentInput.slice(0, 30),
+          title: currentInput ? currentInput.slice(0, 30) : "이어진 대화",
           updated_at: new Date().toISOString(),
         })
         .eq("id", roomId);
@@ -552,6 +573,43 @@ await supabase.from("chat_messages").insert([
       setLoading(false);
     }
   }
+
+async function deleteMessagesFrom(index: number) {
+  if (!roomId || !profile) return;
+
+  const targetMessage = messages[index];
+
+  if (!targetMessage?.created_at) {
+    alert("삭제 기준 시간을 찾을 수 없습니다.");
+    return;
+  }
+
+  const ok = confirm("이 메시지부터 이후 대화를 삭제할까요?");
+  if (!ok) return;
+
+  const { error } = await supabase
+    .from("chat_messages")
+    .delete()
+    .eq("room_id", roomId)
+    .gte("created_at", targetMessage.created_at);
+
+  if (error) {
+    console.error(error);
+    alert("삭제 중 오류가 발생했습니다.");
+    return;
+  }
+
+  setMessages(messages.slice(0, index));
+
+  await supabase
+    .from("chat_rooms")
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", roomId);
+
+  await loadRooms(profile.id);
+}
 
   async function regenerateLastAnswer() {
   if (!roomId || !profile || loading) return;
@@ -814,15 +872,52 @@ await supabase.from("chat_messages").insert([
         {renderRoleplayContent(msg.content)}
       </div>
 
-      {!isUser && msg.message_type !== "narration" && index === messages.length - 1 && (
+      <div className="relative mt-2">
   <button
-    onClick={regenerateLastAnswer}
-    disabled={loading}
-    className="mt-2 text-xs text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700"
+    onClick={() =>
+      setOpenMessageMenuIndex(
+        openMessageMenuIndex === index ? null : index
+      )
+    }
+    className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
   >
-    ↻ 재생성
+    ⋯
   </button>
-)}
+
+  {openMessageMenuIndex === index && (
+    <div
+      className={`absolute z-20 mt-1 min-w-[130px] rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg overflow-hidden ${
+        isUser ? "right-0" : "left-0"
+      }`}
+    >
+      {!isUser &&
+        msg.message_type !== "narration" &&
+        index === messages.length - 1 && (
+          <button
+            onClick={() => {
+              setOpenMessageMenuIndex(null);
+              regenerateLastAnswer();
+            }}
+            disabled={loading}
+            className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
+          >
+            ↻ 재생성
+          </button>
+        )}
+
+      <button
+        onClick={() => {
+          setOpenMessageMenuIndex(null);
+          deleteMessagesFrom(index);
+        }}
+        disabled={loading}
+        className="block w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-zinc-900 disabled:text-zinc-700"
+      >
+        여기부터 삭제
+      </button>
+    </div>
+  )}
+</div>
     </div>
   );
 })}
@@ -853,7 +948,7 @@ await supabase.from("chat_messages").insert([
             disabled={!roomId || loading}
             className="shrink-0 bg-blue-600 px-4 sm:px-5 rounded-xl disabled:bg-zinc-700"
           >
-            전송
+            {input.trim() ? "전송" : "계속"}
           </button>
         </div>
       </div>
