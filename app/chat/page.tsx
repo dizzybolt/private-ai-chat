@@ -110,8 +110,14 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
   const [openMessageMenuIndex, setOpenMessageMenuIndex] = useState<number | null>(
-  null
-);
+    null
+  );
+
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(
+    null
+  );
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+
   useEffect(() => {
     initialize();
   }, []);
@@ -574,6 +580,76 @@ if (currentInput) {
     }
   }
 
+function startEditMessage(index: number) {
+  const targetMessage = messages[index];
+
+  if (!targetMessage?.id) {
+    alert("수정할 메시지 ID를 찾을 수 없습니다.");
+    return;
+  }
+
+  setEditingMessageIndex(index);
+  setEditingMessageId(targetMessage.id);
+  setInput(targetMessage.content);
+  setOpenMessageMenuIndex(null);
+}
+
+async function saveEditedMessage() {
+  if (
+    editingMessageIndex === null ||
+    !editingMessageId ||
+    !roomId ||
+    !profile
+  ) {
+    return;
+  }
+
+  const newContent = input.trim();
+
+  if (!newContent) {
+    alert("수정할 내용을 입력해주세요.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("chat_messages")
+    .update({
+      content: newContent,
+    })
+    .eq("id", editingMessageId)
+    .eq("room_id", roomId);
+
+  if (error) {
+    console.error(error);
+    alert("메시지 수정 중 오류가 발생했습니다.");
+    return;
+  }
+
+  setMessages((prev) =>
+    prev.map((message, index) =>
+      index === editingMessageIndex
+        ? {
+            ...message,
+            content: newContent,
+          }
+        : message
+    )
+  );
+
+  setEditingMessageIndex(null);
+  setEditingMessageId(null);
+  setInput("");
+
+  await supabase
+    .from("chat_rooms")
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", roomId);
+
+  await loadRooms(profile.id);
+}
+
 async function deleteMessagesFrom(index: number) {
   if (!roomId || !profile) return;
 
@@ -905,6 +981,16 @@ async function deleteMessagesFrom(index: number) {
           </button>
         )}
 
+      {index === messages.length - 1 && msg.message_type !== "narration" && (
+  <button
+    onClick={() => startEditMessage(index)}
+    disabled={loading}
+    className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
+  >
+    수정
+  </button>
+)}
+
       <button
         onClick={() => {
           setOpenMessageMenuIndex(null);
@@ -921,6 +1007,22 @@ async function deleteMessagesFrom(index: number) {
     </div>
   );
 })}
+
+{editingMessageId && (
+  <div className="px-3 sm:px-4 py-2 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between text-sm">
+    <span className="text-zinc-400">메시지 수정 중</span>
+    <button
+      onClick={() => {
+        setEditingMessageIndex(null);
+        setEditingMessageId(null);
+        setInput("");
+      }}
+      className="text-zinc-500 hover:text-zinc-300"
+    >
+      취소
+    </button>
+  </div>
+)}
 
           {loading && (
             <div className="bg-zinc-800 p-3 rounded-2xl max-w-[80%] text-zinc-400">
@@ -944,11 +1046,11 @@ async function deleteMessagesFrom(index: number) {
           />
 
           <button
-            onClick={sendMessage}
+            onClick={editingMessageId ? saveEditedMessage : sendMessage}
             disabled={!roomId || loading}
             className="shrink-0 bg-blue-600 px-4 sm:px-5 rounded-xl disabled:bg-zinc-700"
           >
-            {input.trim() ? "전송" : "계속"}
+            {editingMessageId ? "수정" : input.trim() ? "전송" : "계속"}
           </button>
         </div>
       </div>
