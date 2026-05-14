@@ -567,26 +567,23 @@ export default function ChatPage() {
 
       const data = await response.json();
 
-      const aiMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message || "응답 생성 실패",
-        speaker_name:
-          selectedCharacters.length === 1
-            ? selectedCharacters[0].name
-            : "캐릭터들",
-        message_type: "chat",
-      };
+      const aiMessages = parseAiCharacterResponse(
+  data.message || "응답 생성 실패",
+  selectedCharacters
+);
 
-      setMessages((prev) => [...prev, aiMessage]);
+setMessages((prev) => [...prev, ...aiMessages]);
 
-      await supabase.from("chat_messages").insert({
-        room_id: roomId,
-        user_id: profile.id,
-        role: aiMessage.role,
-        speaker_name: aiMessage.speaker_name,
-        message_type: aiMessage.message_type,
-        content: aiMessage.content,
-      });
+await supabase.from("chat_messages").insert(
+  aiMessages.map((message) => ({
+    room_id: roomId,
+    user_id: profile.id,
+    role: message.role,
+    speaker_name: message.speaker_name,
+    message_type: message.message_type,
+    content: message.content,
+  }))
+);
 
       await supabase
         .from("chat_rooms")
@@ -641,17 +638,12 @@ export default function ChatPage() {
 
       const data = await response.json();
 
-      const newAiMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message || "응답 생성 실패",
-        speaker_name:
-          selectedCharacters.length === 1
-            ? selectedCharacters[0].name
-            : "캐릭터들",
-        message_type: "chat",
-      };
+const newAiMessages = parseAiCharacterResponse(
+  data.message || "응답 생성 실패",
+  selectedCharacters
+);
 
-      setMessages((prev) => [...prev, newAiMessage]);
+setMessages((prev) => [...prev, ...newAiMessages]);
 
       await supabase
         .from("chat_messages")
@@ -660,14 +652,16 @@ export default function ChatPage() {
         .eq("role", "assistant")
         .eq("content", lastMessage.content);
 
-      await supabase.from("chat_messages").insert({
-        room_id: roomId,
-        user_id: profile.id,
-        role: newAiMessage.role,
-        speaker_name: newAiMessage.speaker_name,
-        message_type: newAiMessage.message_type,
-        content: newAiMessage.content,
-      });
+await supabase.from("chat_messages").insert(
+  newAiMessages.map((message) => ({
+    room_id: roomId,
+    user_id: profile.id,
+    role: message.role,
+    speaker_name: message.speaker_name,
+    message_type: message.message_type,
+    content: message.content,
+  }))
+);
 
       await supabase
         .from("chat_rooms")
@@ -1021,6 +1015,81 @@ export default function ChatPage() {
       )}
     </div>
   );
+}
+
+function parseAiCharacterResponse(
+  content: string,
+  selectedCharacters: Character[]
+): ChatMessage[] {
+  if (selectedCharacters.length <= 1) {
+    return [
+      {
+        role: "assistant",
+        content,
+        speaker_name: selectedCharacters[0]?.name || "AI",
+        message_type: "chat",
+      },
+    ];
+  }
+
+  const characterNames = selectedCharacters.map((c) => c.name);
+
+  const lines = content.split("\n");
+  const result: ChatMessage[] = [];
+
+  let currentSpeaker = "";
+  let currentContent: string[] = [];
+
+  function flush() {
+    if (!currentSpeaker && currentContent.length === 0) return;
+
+    result.push({
+      role: "assistant",
+      speaker_name: currentSpeaker || "캐릭터들",
+      message_type: "chat",
+      content: currentContent.join("\n").trim(),
+    });
+
+    currentSpeaker = "";
+    currentContent = [];
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    const matchedName = characterNames.find(
+      (name) => trimmed === `${name}:` || trimmed.startsWith(`${name}:`)
+    );
+
+    if (matchedName) {
+      flush();
+
+      currentSpeaker = matchedName;
+
+      const rest = trimmed.replace(`${matchedName}:`, "").trim();
+
+      if (rest) {
+        currentContent.push(rest);
+      }
+    } else {
+      currentContent.push(line);
+    }
+  }
+
+  flush();
+
+  if (result.length === 0) {
+    return [
+      {
+        role: "assistant",
+        content,
+        speaker_name: "캐릭터들",
+        message_type: "chat",
+      },
+    ];
+  }
+
+  return result;
 }
 
 function renderRoleplayContent(content: string) {
