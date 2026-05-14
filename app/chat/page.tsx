@@ -647,7 +647,7 @@ await supabase.from("chat_messages").insert([
     : [];
 
   return (
-    <div className="h-screen bg-black text-white flex relative overflow-hidden">
+    <div className="h-screen w-screen max-w-screen overflow-hidden bg-black text-white flex relative">
       <div
         className={`fixed md:static z-30 h-full w-[280px] bg-black border-r border-zinc-800 flex flex-col transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
@@ -741,7 +741,7 @@ await supabase.from("chat_messages").insert([
         />
       )}
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
         <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -765,7 +765,7 @@ await supabase.from("chat_messages").insert([
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 space-y-4">
           {messages.length === 0 && (
             <div className="text-zinc-500 text-sm text-center mt-20">
               새 채팅을 눌러 페르소나, 캐릭터, 세계관, 로어북을 선택하세요.
@@ -792,9 +792,9 @@ await supabase.from("chat_messages").insert([
   return (
     <div
       key={index}
-      className={`flex flex-col max-w-[80%] ${
-        isUser ? "ml-auto items-end" : "mr-auto items-start"
-      }`}
+        className={`flex flex-col max-w-[78%] min-w-0 ${
+          isUser ? "ml-auto items-end" : "mr-auto items-start"
+        }`}
     >
       <div
         className={`text-xs mb-1 px-1 ${
@@ -805,7 +805,7 @@ await supabase.from("chat_messages").insert([
       </div>
 
       <div
-        className={`whitespace-pre-wrap p-3 rounded-2xl leading-relaxed ${
+        className={`whitespace-pre-wrap break-words p-3 rounded-2xl leading-relaxed ${
           isUser
             ? "bg-blue-600 text-white rounded-br-md"
             : "bg-zinc-800 text-white rounded-bl-md"
@@ -834,7 +834,7 @@ await supabase.from("chat_messages").insert([
           )}
         </div>
 
-        <div className="p-4 border-t border-zinc-800 flex gap-2">
+        <div className="p-3 sm:p-4 border-t border-zinc-800 flex gap-2 w-full max-w-full">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -842,7 +842,7 @@ await supabase.from("chat_messages").insert([
               roomId ? "메시지를 입력하세요..." : "새 채팅을 먼저 시작하세요"
             }
             disabled={!roomId || loading}
-            className="flex-1 bg-zinc-900 rounded-xl px-4 py-3 outline-none disabled:text-zinc-500"
+            className="flex-1 min-w-0 bg-zinc-900 rounded-xl px-4 py-3 outline-none disabled:text-zinc-500"
             onKeyDown={(e) => {
               if (e.key === "Enter") sendMessage();
             }}
@@ -851,7 +851,7 @@ await supabase.from("chat_messages").insert([
           <button
             onClick={sendMessage}
             disabled={!roomId || loading}
-            className="bg-blue-600 px-5 rounded-xl disabled:bg-zinc-700"
+            className="shrink-0 bg-blue-600 px-4 sm:px-5 rounded-xl disabled:bg-zinc-700"
           >
             전송
           </button>
