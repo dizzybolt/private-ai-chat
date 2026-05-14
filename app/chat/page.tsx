@@ -85,7 +85,9 @@ export default function ChatPage() {
   const [worldviews, setWorldviews] = useState<Worldview[]>([]);
   const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
 
-  const [selectedCharacters, setSelectedCharacters] = useState<Character[]>([]);
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
+    null
+  );
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   const [selectedWorldview, setSelectedWorldview] =
     useState<Worldview | null>(null);
@@ -93,7 +95,7 @@ export default function ChatPage() {
     null
   );
 
-  const [newCharacterIds, setNewCharacterIds] = useState<string[]>([]);
+  const [newCharacterId, setNewCharacterId] = useState("");
   const [newPersonaId, setNewPersonaId] = useState("");
   const [newWorldviewId, setNewWorldviewId] = useState("");
   const [newLorebookId, setNewLorebookId] = useState("");
@@ -251,30 +253,15 @@ export default function ChatPage() {
     const worldviewList = lists?.worldviews || worldviews;
     const lorebookList = lists?.lorebooks || lorebooks;
 
-    const { data: roomCharacters } = await supabase
-      .from("chat_room_characters")
-      .select("character_id")
-      .eq("room_id", selectedRoomId);
-
-    const roomCharacterIds = (roomCharacters || []).map(
-      (item) => item.character_id
+    setSelectedCharacter(
+      characterList.find((item) => item.id === roomData.character_id) || null
     );
-
-    const selectedRoomCharacters =
-      roomCharacterIds.length > 0
-        ? characterList.filter((item) => roomCharacterIds.includes(item.id))
-        : characterList.filter((item) => item.id === roomData.character_id);
-
-    setSelectedCharacters(selectedRoomCharacters);
-
     setSelectedPersona(
       personaList.find((item) => item.id === roomData.persona_id) || null
     );
-
     setSelectedWorldview(
       worldviewList.find((item) => item.id === roomData.worldview_id) || null
     );
-
     setSelectedLorebook(
       lorebookList.find((item) => item.id === roomData.lorebook_id) || null
     );
@@ -291,21 +278,6 @@ export default function ChatPage() {
     }
 
     setMessages((messageData || []) as ChatMessage[]);
-  }
-
-  function getCharacterNames(list: Character[]) {
-    if (list.length === 0) return "AI 채팅";
-    return list.map((character) => character.name).join(", ");
-  }
-
-  function toggleNewCharacter(characterId: string) {
-    setNewCharacterIds((prev) => {
-      if (prev.includes(characterId)) {
-        return prev.filter((id) => id !== characterId);
-      }
-
-      return [...prev, characterId];
-    });
   }
 
   function getLorebooksByWorldview(worldviewId: string) {
@@ -338,7 +310,7 @@ export default function ChatPage() {
     const matchedLorebooks = getLorebooksByWorldview(firstWorldview.id);
 
     setNewPersonaId(defaultPersona.id);
-    setNewCharacterIds([characters[0].id]);
+    setNewCharacterId(characters[0].id);
     setNewWorldviewId(firstWorldview.id);
     setNewLorebookId(matchedLorebooks[0]?.id || "");
     setNewChatModalOpen(true);
@@ -352,21 +324,10 @@ export default function ChatPage() {
   }
 
   async function createRoomWithSelection() {
-    if (
-      !profile ||
-      !newPersonaId ||
-      newCharacterIds.length === 0 ||
-      !newWorldviewId
-    ) {
-      alert("페르소나, 캐릭터, 세계관을 모두 선택해주세요.");
-      return;
-    }
+    if (!profile || !newPersonaId || !newCharacterId || !newWorldviewId) return;
 
-    const selectedCharacterList = characters.filter((item) =>
-      newCharacterIds.includes(item.id)
-    );
-
-    const mainCharacter = selectedCharacterList[0] || null;
+    const character =
+      characters.find((item) => item.id === newCharacterId) || null;
     const persona = personas.find((item) => item.id === newPersonaId) || null;
     const worldview =
       worldviews.find((item) => item.id === newWorldviewId) || null;
@@ -378,13 +339,10 @@ export default function ChatPage() {
       .insert({
         user_id: profile.id,
         persona_id: newPersonaId,
-        character_id: mainCharacter?.id || null,
+        character_id: newCharacterId,
         worldview_id: newWorldviewId,
         lorebook_id: newLorebookId || null,
-        title:
-          selectedCharacterList.length > 0
-            ? `${getCharacterNames(selectedCharacterList)}와의 대화`
-            : "새 채팅",
+        title: character?.name ? `${character.name}와의 대화` : "새 채팅",
       })
       .select("id")
       .single();
@@ -395,61 +353,54 @@ export default function ChatPage() {
       return;
     }
 
-    await supabase.from("chat_room_characters").insert(
-      selectedCharacterList.map((character) => ({
-        room_id: data.id,
-        character_id: character.id,
-      }))
-    );
-
     localStorage.setItem(`current_room_id_${profile.id}`, data.id);
 
     setRoomId(data.id);
-    setSelectedCharacters(selectedCharacterList);
+    setSelectedCharacter(character);
     setSelectedPersona(persona);
     setSelectedWorldview(worldview);
     setSelectedLorebook(lorebook);
     setNewChatModalOpen(false);
     setSidebarOpen(false);
 
-    const narrationContent = `${persona?.name || "사용자"}와 ${getCharacterNames(
-      selectedCharacterList
-    )}의 대화가 시작되었다. 배경은 ${
-      worldview?.title || "알 수 없는 세계"
-    }이다.`;
+    const narrationMessage: ChatMessage = {
+  role: "assistant",
+  content: `${persona?.name || "사용자"}와 ${character?.name || "캐릭터"}의 대화가 시작되었다. 배경은 ${worldview?.title || "알 수 없는 세계"}이다.`,
+};
 
-    const firstMessages: ChatMessage[] = [
-      {
-        role: "assistant",
-        content: narrationContent,
-        speaker_name: "내레이션",
-        message_type: "narration",
-      },
-    ];
+const firstMessages: ChatMessage[] = [narrationMessage];
 
-    for (const character of selectedCharacterList) {
-      if (character.first_message) {
-        firstMessages.push({
+if (character?.first_message) {
+  firstMessages.push({
+    role: "assistant",
+    content: character.first_message,
+  });
+}
+
+setMessages(firstMessages);
+
+await supabase.from("chat_messages").insert([
+  {
+    room_id: data.id,
+    user_id: profile.id,
+    role: "assistant",
+    speaker_name: "내레이션",
+    message_type: "narration",
+    content: narrationMessage.content,
+  },
+  ...(character?.first_message
+    ? [
+        {
+          room_id: data.id,
+          user_id: profile.id,
           role: "assistant",
-          content: character.first_message,
           speaker_name: character.name,
           message_type: "chat",
-        });
-      }
-    }
-
-    setMessages(firstMessages);
-
-    await supabase.from("chat_messages").insert(
-      firstMessages.map((message) => ({
-        room_id: data.id,
-        user_id: profile.id,
-        role: message.role,
-        speaker_name: message.speaker_name,
-        message_type: message.message_type,
-        content: message.content,
-      }))
-    );
+          content: character.first_message,
+        },
+      ]
+    : []),
+]);
 
     await loadRooms(profile.id);
   }
@@ -513,7 +464,7 @@ export default function ChatPage() {
       localStorage.removeItem(`current_room_id_${profile.id}`);
       setRoomId(null);
       setMessages([]);
-      setSelectedCharacters([]);
+      setSelectedCharacter(null);
       setSelectedPersona(null);
       setSelectedWorldview(null);
       setSelectedLorebook(null);
@@ -540,13 +491,13 @@ export default function ChatPage() {
     setLoading(true);
 
     await supabase.from("chat_messages").insert({
-      room_id: roomId,
-      user_id: profile.id,
-      role: userMessage.role,
-      speaker_name: userMessage.speaker_name,
-      message_type: userMessage.message_type,
-      content: userMessage.content,
-    });
+  room_id: roomId,
+  user_id: profile.id,
+  role: userMessage.role,
+  speaker_name: userMessage.speaker_name,
+  message_type: userMessage.message_type,
+  content: userMessage.content,
+});
 
     try {
       const relevantLoreEntries = await getRelevantLoreEntries(updatedMessages);
@@ -558,7 +509,7 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           messages: updatedMessages,
-          characters: selectedCharacters,
+          character: selectedCharacter,
           persona: selectedPersona,
           worldview: selectedWorldview,
           loreEntries: relevantLoreEntries,
@@ -568,25 +519,22 @@ export default function ChatPage() {
       const data = await response.json();
 
       const aiMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message || "응답 생성 실패",
-        speaker_name:
-          selectedCharacters.length === 1
-            ? selectedCharacters[0].name
-            : getCharacterNames(selectedCharacters),
-        message_type: "chat",
-      };
+  role: "assistant",
+  content: data.message || "응답 생성 실패",
+  speaker_name: selectedCharacter?.name || "AI",
+  message_type: "chat",
+};
 
       setMessages((prev) => [...prev, aiMessage]);
 
       await supabase.from("chat_messages").insert({
-        room_id: roomId,
-        user_id: profile.id,
-        role: aiMessage.role,
-        speaker_name: aiMessage.speaker_name,
-        message_type: aiMessage.message_type,
-        content: aiMessage.content,
-      });
+  room_id: roomId,
+  user_id: profile.id,
+  role: aiMessage.role,
+  speaker_name: aiMessage.speaker_name,
+  message_type: aiMessage.message_type,
+  content: aiMessage.content,
+});
 
       await supabase
         .from("chat_rooms")
@@ -606,85 +554,80 @@ export default function ChatPage() {
   }
 
   async function regenerateLastAnswer() {
-    if (!roomId || !profile || loading) return;
+  if (!roomId || !profile || loading) return;
 
-    const lastMessage = messages[messages.length - 1];
+  const lastMessage = messages[messages.length - 1];
 
-    if (!lastMessage || lastMessage.role !== "assistant") {
-      alert("재생성할 AI 답변이 없습니다.");
-      return;
-    }
-
-    const messagesWithoutLastAi = messages.slice(0, -1);
-
-    setMessages(messagesWithoutLastAi);
-    setLoading(true);
-
-    try {
-      const relevantLoreEntries = await getRelevantLoreEntries(
-        messagesWithoutLastAi
-      );
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: messagesWithoutLastAi,
-          characters: selectedCharacters,
-          persona: selectedPersona,
-          worldview: selectedWorldview,
-          loreEntries: relevantLoreEntries,
-        }),
-      });
-
-      const data = await response.json();
-
-      const newAiMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message || "응답 생성 실패",
-        speaker_name:
-          selectedCharacters.length === 1
-            ? selectedCharacters[0].name
-            : getCharacterNames(selectedCharacters),
-        message_type: "chat",
-      };
-
-      setMessages((prev) => [...prev, newAiMessage]);
-
-      await supabase
-        .from("chat_messages")
-        .delete()
-        .eq("room_id", roomId)
-        .eq("role", "assistant")
-        .eq("content", lastMessage.content);
-
-      await supabase.from("chat_messages").insert({
-        room_id: roomId,
-        user_id: profile.id,
-        role: newAiMessage.role,
-        speaker_name: newAiMessage.speaker_name,
-        message_type: newAiMessage.message_type,
-        content: newAiMessage.content,
-      });
-
-      await supabase
-        .from("chat_rooms")
-        .update({
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", roomId);
-
-      await loadRooms(profile.id);
-    } catch (error) {
-      console.error(error);
-      alert("재생성 중 오류가 발생했습니다.");
-      setMessages(messages);
-    } finally {
-      setLoading(false);
-    }
+  if (!lastMessage || lastMessage.role !== "assistant") {
+    alert("재생성할 AI 답변이 없습니다.");
+    return;
   }
+
+  const messagesWithoutLastAi = messages.slice(0, -1);
+
+  setMessages(messagesWithoutLastAi);
+  setLoading(true);
+
+  try {
+    const relevantLoreEntries = await getRelevantLoreEntries(messagesWithoutLastAi);
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: messagesWithoutLastAi,
+        character: selectedCharacter,
+        persona: selectedPersona,
+        worldview: selectedWorldview,
+        loreEntries: relevantLoreEntries,
+      }),
+    });
+
+    const data = await response.json();
+
+    const newAiMessage: ChatMessage = {
+      role: "assistant",
+      content: data.message || "응답 생성 실패",
+      speaker_name: selectedCharacter?.name || "AI",
+      message_type: "chat",
+    };
+
+    setMessages((prev) => [...prev, newAiMessage]);
+
+    await supabase
+      .from("chat_messages")
+      .delete()
+      .eq("room_id", roomId)
+      .eq("role", "assistant")
+      .eq("content", lastMessage.content);
+
+    await supabase.from("chat_messages").insert({
+      room_id: roomId,
+      user_id: profile.id,
+      role: newAiMessage.role,
+      speaker_name: newAiMessage.speaker_name,
+      message_type: newAiMessage.message_type,
+      content: newAiMessage.content,
+    });
+
+    await supabase
+      .from("chat_rooms")
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", roomId);
+
+    await loadRooms(profile.id);
+  } catch (error) {
+    console.error(error);
+    alert("재생성 중 오류가 발생했습니다.");
+    setMessages(messages);
+  } finally {
+    setLoading(false);
+  }
+}
 
   async function logout() {
     await supabase.auth.signOut();
@@ -809,7 +752,7 @@ export default function ChatPage() {
 
           <div className="min-w-0">
             <h1 className="font-bold text-lg truncate">
-              {getCharacterNames(selectedCharacters)}
+              {selectedCharacter?.name || "AI 채팅"}
             </h1>
 
             <p className="text-sm text-zinc-400 truncate">
@@ -830,62 +773,59 @@ export default function ChatPage() {
           )}
 
           {messages.map((msg, index) => {
-            const isNarration = msg.message_type === "narration";
-            const isUser = msg.role === "user";
+  const isNarration = msg.message_type === "narration";
+  const isUser = msg.role === "user";
 
-            if (isNarration) {
-              return (
-                <div key={index} className="flex justify-center">
-                  <div className="max-w-[92%] bg-zinc-950 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap break-words leading-relaxed">
-                    <div className="text-xs text-zinc-500 text-center mb-1">
-                      내레이션
-                    </div>
-                    {msg.content}
-                  </div>
-                </div>
-              );
-            }
+  if (isNarration) {
+    return (
+      <div key={index} className="flex justify-center">
+        <div className="max-w-[92%] bg-zinc-950 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed">
+          <div className="text-xs text-zinc-500 text-center mb-1">
+            내레이션
+          </div>
+          {renderRoleplayContent(msg.content)}
+        </div>
+      </div>
+    );
+  }
 
-            return (
-              <div
-                key={index}
-                className={`flex flex-col max-w-[78%] min-w-0 ${
-                  isUser ? "ml-auto items-end" : "mr-auto items-start"
-                }`}
-              >
-                <div
-                  className={`text-xs mb-1 px-1 ${
-                    isUser ? "text-blue-300 text-right" : "text-zinc-400"
-                  }`}
-                >
-                  {msg.speaker_name ||
-                    (isUser ? "나" : getCharacterNames(selectedCharacters))}
-                </div>
+  return (
+    <div
+      key={index}
+        className={`flex flex-col max-w-[78%] min-w-0 ${
+          isUser ? "ml-auto items-end" : "mr-auto items-start"
+        }`}
+    >
+      <div
+        className={`text-xs mb-1 px-1 ${
+          isUser ? "text-blue-300 text-right" : "text-zinc-400"
+        }`}
+      >
+        {msg.speaker_name || (isUser ? "나" : selectedCharacter?.name || "AI")}
+      </div>
 
-                <div
-                  className={`whitespace-pre-wrap break-words p-3 rounded-2xl leading-relaxed ${
-                    isUser
-                      ? "bg-blue-600 text-white rounded-br-md"
-                      : "bg-zinc-800 text-white rounded-bl-md"
-                  }`}
-                >
-                  {renderRoleplayContent(msg.content)}
-                </div>
+      <div
+        className={`whitespace-pre-wrap break-words p-3 rounded-2xl leading-relaxed ${
+          isUser
+            ? "bg-blue-600 text-white rounded-br-md"
+            : "bg-zinc-800 text-white rounded-bl-md"
+        }`}
+      >
+        {renderRoleplayContent(msg.content)}
+      </div>
 
-                {!isUser &&
-                  msg.message_type !== "narration" &&
-                  index === messages.length - 1 && (
-                    <button
-                      onClick={regenerateLastAnswer}
-                      disabled={loading}
-                      className="mt-2 text-xs text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700"
-                    >
-                      ↻ 재생성
-                    </button>
-                  )}
-              </div>
-            );
-          })}
+      {!isUser && msg.message_type !== "narration" && index === messages.length - 1 && (
+  <button
+    onClick={regenerateLastAnswer}
+    disabled={loading}
+    className="mt-2 text-xs text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700"
+  >
+    ↻ 재생성
+  </button>
+)}
+    </div>
+  );
+})}
 
           {loading && (
             <div className="bg-zinc-800 p-3 rounded-2xl max-w-[80%] text-zinc-400">
@@ -946,27 +886,17 @@ export default function ChatPage() {
 
             <label className="block space-y-2">
               <span className="text-sm text-zinc-300">캐릭터</span>
-
-              <div className="max-h-48 overflow-y-auto space-y-2 bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+              <select
+                value={newCharacterId}
+                onChange={(e) => setNewCharacterId(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 outline-none"
+              >
                 {characters.map((character) => (
-                  <label
-                    key={character.id}
-                    className="flex items-center gap-3 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={newCharacterIds.includes(character.id)}
-                      onChange={() => toggleNewCharacter(character.id)}
-                    />
-
-                    <span>{character.name}</span>
-                  </label>
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                  </option>
                 ))}
-              </div>
-
-              <p className="text-xs text-zinc-500">
-                최소 1명 이상 선택하세요. 너무 많이 선택하면 답변이 산만해질 수 있습니다.
-              </p>
+              </select>
             </label>
 
             <label className="block space-y-2">
@@ -1031,6 +961,7 @@ function renderRoleplayContent(content: string) {
       {parts.map((part, index) => {
         if (!part) return null;
 
+        // 행동: *문을 연다*
         if (part.startsWith("*") && part.endsWith("*")) {
           return (
             <div
@@ -1042,24 +973,36 @@ function renderRoleplayContent(content: string) {
           );
         }
 
+        // 생각: (조금 어색하네)
         if (part.startsWith("(") && part.endsWith(")")) {
           return (
-            <div key={index} className="text-zinc-500 text-sm leading-relaxed">
+            <div
+              key={index}
+              className="text-zinc-500 text-sm leading-relaxed"
+            >
               ({part.slice(1, -1)})
             </div>
           );
         }
 
+        // 대사: "안녕?"
         if (part.startsWith('"') && part.endsWith('"')) {
           return (
-            <div key={index} className="text-white leading-relaxed">
+            <div
+              key={index}
+              className="text-white leading-relaxed"
+            >
               {part.slice(1, -1)}
             </div>
           );
         }
 
+        // 아무것도 안 감싼 일반 문장 = 대사
         return (
-          <div key={index} className="text-white leading-relaxed">
+          <div
+            key={index}
+            className="text-white leading-relaxed"
+          >
             {part}
           </div>
         );

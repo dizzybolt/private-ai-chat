@@ -40,25 +40,6 @@ type LoreEntry = {
   priority?: number;
 };
 
-function buildCharactersText(characters?: CharacterSetting[]) {
-  if (!characters || characters.length === 0) {
-    return "설정 없음";
-  }
-
-  return characters
-    .map((character, index) => {
-      return `
-[캐릭터 ${index + 1}]
-이름: ${character.name || "설정 없음"}
-설명: ${character.description || "설정 없음"}
-성격: ${character.personality || "설정 없음"}
-말투: ${character.speaking_style || "설정 없음"}
-사용자와의 관계: ${character.relationship || "설정 없음"}
-`.trim();
-    })
-    .join("\n\n");
-}
-
 function buildLoreText(loreEntries?: LoreEntry[]) {
   if (!loreEntries || loreEntries.length === 0) {
     return "관련 로어 없음";
@@ -77,12 +58,12 @@ ${entry.content}
 }
 
 function buildSystemPrompt({
-  characters,
+  character,
   persona,
   worldview,
   loreEntries,
 }: {
-  characters?: CharacterSetting[];
+  character?: CharacterSetting | null;
   persona?: PersonaSetting | null;
   worldview?: WorldviewSetting | null;
   loreEntries?: LoreEntry[];
@@ -101,7 +82,11 @@ function buildSystemPrompt({
 추가 설정: ${persona?.additional_settings || "설정 없음"}
 
 [AI 캐릭터]
-${buildCharactersText(characters)}
+이름: ${character?.name || "설정 없음"}
+설명: ${character?.description || "설정 없음"}
+성격: ${character?.personality || "설정 없음"}
+말투: ${character?.speaking_style || "설정 없음"}
+사용자와의 관계: ${character?.relationship || "설정 없음"}
 
 [세계관]
 이름: ${worldview?.title || "설정 없음"}
@@ -113,29 +98,39 @@ ${buildCharactersText(characters)}
 ${buildLoreText(loreEntries)}
 
 중요 규칙:
-- 반드시 한국어로만 답변한다.
-- 영어, 일본어, 중국어 등 외국어를 섞지 않는다.
-- AI는 위 캐릭터 설정을 참고해 자연스럽게 대화한다.
-- 캐릭터가 여러 명이면 상황에 맞는 캐릭터만 자연스럽게 반응한다.
-- 모든 캐릭터가 매번 말할 필요는 없다.
+- AI는 반드시 [AI 캐릭터] 역할로 대화한다.
 - 사용자는 [사용자 페르소나]로 인식한다.
 - 대화는 [세계관] 안에서 진행한다.
-- 로어북 항목이 있으면 자연스럽게 참고한다.
-- 너무 설명식으로 답하지 않는다.
-- 번역체를 피하고 자연스러운 한국어 구어체로 답한다.
-- 캐릭터 이름을 억지로 붙이지 않아도 된다.
+- [현재 대화에 적용할 로어북 항목]이 있으면 그 설정을 우선 참고한다.
+- 로어북 내용과 충돌하는 설정을 임의로 만들지 않는다.
+- 세계관의 배경과 규칙을 쉽게 깨지 않는다.
+- 캐릭터와 사용자 관계를 유지한다.
+- 이전 대화 흐름을 참고해서 자연스럽게 이어간다.
 
 [입력 해석 규칙]
-- 일반 문장 또는 "큰따옴표" 문장은 실제 대사로 해석한다.
-- *별표로 감싼 문장*은 행동 묘사로 해석한다.
-- (괄호로 감싼 문장)은 생각 또는 속마음으로 해석한다.
+- 사용자의 일반 문장 또는 "큰따옴표" 문장은 실제 대사로 해석한다.
+- *별표로 감싼 문장*은 사용자의 행동 묘사로 해석한다.
+- (괄호로 감싼 문장)은 사용자의 생각 또는 속마음으로 해석한다.
+- 사용자가 행동을 입력하면 캐릭터는 그 행동을 본 것처럼 반응한다.
+- 사용자가 생각을 입력하면 캐릭터는 직접 들은 말처럼 반응하지 말고, 분위기나 표정으로 간접적으로 반응한다.
 
 [출력 형식]
+- AI도 같은 형식을 사용한다.
 - 행동 묘사는 *행동* 형식으로 작성한다.
 - 실제 대사는 "대사" 형식으로 작성한다.
 - 속마음은 (생각) 형식으로 작성한다.
-- 단, 모든 답변에 행동/대사/생각을 억지로 다 넣지 않는다.
+- 아무것도 감싸지 않은 설명문은 최대한 줄인다.
+- 모든 답변에 행동, 대사, 생각을 억지로 다 넣지 않는다.
 - 짧은 대화에서는 대사만 자연스럽게 답해도 된다.
+- 행동과 생각은 과하게 길게 쓰지 않는다.
+
+[응답 예시]
+*리아는 잠깐 네 얼굴을 바라보다가, 작게 숨을 내쉬었다.*
+
+"왔어? 오늘은 좀 늦었네."
+
+(괜히 기다린 티 내긴 싫은데.)
+
 `.trim();
 }
 
@@ -144,7 +139,7 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const messages = body.messages as ChatMessage[];
-    const characters = (body.characters || []) as CharacterSetting[];
+    const character = body.character as CharacterSetting | null;
     const persona = body.persona as PersonaSetting | null;
     const worldview = body.worldview as WorldviewSetting | null;
     const loreEntries = (body.loreEntries || []) as LoreEntry[];
@@ -157,12 +152,11 @@ export async function POST(req: Request) {
     }
 
     const recentMessages = messages
-      .slice(-20)
-      .filter((message) => message.message_type !== "narration")
-      .map((message) => ({
-        role: message.role,
-        content: message.content,
-      }));
+  .slice(-20)
+  .map((message: ChatMessage) => ({
+    role: message.role,
+    content: message.content,
+  }));
 
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
@@ -178,7 +172,7 @@ export async function POST(req: Request) {
             {
               role: "system",
               content: buildSystemPrompt({
-                characters,
+                character,
                 persona,
                 worldview,
                 loreEntries,
