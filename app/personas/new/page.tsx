@@ -6,6 +6,7 @@ import { supabase } from "../../../lib/supabase";
 export default function NewPersonaPage() {
   const [form, setForm] = useState({
     name: "",
+    avatar_url: "",
     description: "",
     personality: "",
     speaking_style: "",
@@ -96,6 +97,7 @@ function PersonaForm({
         <h1 className="text-2xl font-bold">{title}</h1>
 
         <Input label="페르소나 이름" value={String(form.name)} onChange={(v) => onChange("name", v)} />
+        <Input label="프로필 이미지 URL" value={String(form.avatar_url)} onChange={(v) => onChange("avatar_url", v)} />
         <Textarea label="설명" value={String(form.description)} onChange={(v) => onChange("description", v)} />
         <Textarea label="성격" value={String(form.personality)} onChange={(v) => onChange("personality", v)} />
         <Textarea label="말투" value={String(form.speaking_style)} onChange={(v) => onChange("speaking_style", v)} />

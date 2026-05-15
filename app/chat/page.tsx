@@ -51,6 +51,7 @@ type Persona = {
   background: string | null;
   relationship_style: string | null;
   additional_settings: string | null;
+  avatar_url: string | null;
   is_default: boolean;
 };
 
@@ -87,9 +88,8 @@ export default function ChatPage() {
   const [worldviews, setWorldviews] = useState<Worldview[]>([]);
   const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
 
-  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
-    null
-  );
+  const [selectedCharacter, setSelectedCharacter] =
+    useState<Character | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   const [selectedWorldview, setSelectedWorldview] =
     useState<Worldview | null>(null);
@@ -109,9 +109,10 @@ export default function ChatPage() {
   const [initializing, setInitializing] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
-  const [openMessageMenuIndex, setOpenMessageMenuIndex] = useState<number | null>(
-    null
-  );
+
+  const [openMessageMenuIndex, setOpenMessageMenuIndex] = useState<
+    number | null
+  >(null);
 
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(
     null
@@ -121,6 +122,16 @@ export default function ChatPage() {
   useEffect(() => {
     initialize();
   }, []);
+
+  function getMessageAvatar(msg: ChatMessage) {
+    if (msg.message_type === "narration") return null;
+
+    if (msg.role === "user") {
+      return selectedPersona?.avatar_url || null;
+    }
+
+    return selectedCharacter?.avatar_url || null;
+  }
 
   async function initialize() {
     try {
@@ -374,43 +385,39 @@ export default function ChatPage() {
     setSidebarOpen(false);
 
     const narrationMessage: ChatMessage = {
-  role: "assistant",
-  content: `${persona?.name || "사용자"}와 ${character?.name || "캐릭터"}의 대화가 시작되었다. 배경은 ${worldview?.title || "알 수 없는 세계"}이다.`,
-};
+      role: "assistant",
+      content: `${persona?.name || "사용자"}와 ${
+        character?.name || "캐릭터"
+      }의 대화가 시작되었다. 배경은 ${
+        worldview?.title || "알 수 없는 세계"
+      }이다.`,
+      speaker_name: "내레이션",
+      message_type: "narration",
+    };
 
-const firstMessages: ChatMessage[] = [narrationMessage];
+    const firstMessages: ChatMessage[] = [narrationMessage];
 
-if (character?.first_message) {
-  firstMessages.push({
-    role: "assistant",
-    content: character.first_message,
-  });
-}
+    if (character?.first_message) {
+      firstMessages.push({
+        role: "assistant",
+        content: character.first_message,
+        speaker_name: character.name,
+        message_type: "chat",
+      });
+    }
 
-setMessages(firstMessages);
+    setMessages(firstMessages);
 
-await supabase.from("chat_messages").insert([
-  {
-    room_id: data.id,
-    user_id: profile.id,
-    role: "assistant",
-    speaker_name: "내레이션",
-    message_type: "narration",
-    content: narrationMessage.content,
-  },
-  ...(character?.first_message
-    ? [
-        {
-          room_id: data.id,
-          user_id: profile.id,
-          role: "assistant",
-          speaker_name: character.name,
-          message_type: "chat",
-          content: character.first_message,
-        },
-      ]
-    : []),
-]);
+    await supabase.from("chat_messages").insert(
+      firstMessages.map((message) => ({
+        room_id: data.id,
+        user_id: profile.id,
+        role: message.role,
+        speaker_name: message.speaker_name,
+        message_type: message.message_type,
+        content: message.content,
+      }))
+    );
 
     await loadRooms(profile.id);
   }
@@ -486,45 +493,45 @@ await supabase.from("chat_messages").insert([
   async function sendMessage() {
     if (loading || !roomId || !profile) return;
 
-const currentInput = input.trim();
+    const currentInput = input.trim();
 
-let updatedMessages = [...messages];
+    let updatedMessages = [...messages];
 
-setInput("");
-setLoading(true);
+    setInput("");
+    setLoading(true);
 
-if (currentInput) {
-  const userMessage: ChatMessage = {
-    role: "user",
-    content: currentInput,
-    speaker_name: selectedPersona?.name || "나",
-    message_type: "chat",
-  };
+    if (currentInput) {
+      const userMessage: ChatMessage = {
+        role: "user",
+        content: currentInput,
+        speaker_name: selectedPersona?.name || "나",
+        message_type: "chat",
+      };
 
-  updatedMessages = [...messages, userMessage];
+      updatedMessages = [...messages, userMessage];
 
-  setMessages(updatedMessages);
+      setMessages(updatedMessages);
 
-  await supabase.from("chat_messages").insert({
-    room_id: roomId,
-    user_id: profile.id,
-    role: userMessage.role,
-    speaker_name: userMessage.speaker_name,
-    message_type: userMessage.message_type,
-    content: userMessage.content,
-  });
-} else {
-  updatedMessages = [
-    ...messages,
-    {
-      role: "user",
-      content:
-        "이전 대화 흐름을 이어서 캐릭터가 자연스럽게 다음 반응을 해줘. 사용자가 새 말을 하지 않은 상황이므로, 캐릭터의 행동이나 짧은 대사로 장면을 이어가.",
-      speaker_name: selectedPersona?.name || "나",
-      message_type: "system",
-    },
-  ];
-}
+      await supabase.from("chat_messages").insert({
+        room_id: roomId,
+        user_id: profile.id,
+        role: userMessage.role,
+        speaker_name: userMessage.speaker_name,
+        message_type: userMessage.message_type,
+        content: userMessage.content,
+      });
+    } else {
+      updatedMessages = [
+        ...messages,
+        {
+          role: "user",
+          content:
+            "이전 대화 흐름을 이어서 캐릭터가 자연스럽게 다음 반응을 해줘. 사용자가 새 말을 하지 않은 상황이므로, 캐릭터의 행동이나 짧은 대사로 장면을 이어가.",
+          speaker_name: selectedPersona?.name || "나",
+          message_type: "system",
+        },
+      ];
+    }
 
     try {
       const relevantLoreEntries = await getRelevantLoreEntries(updatedMessages);
@@ -546,22 +553,22 @@ if (currentInput) {
       const data = await response.json();
 
       const aiMessage: ChatMessage = {
-  role: "assistant",
-  content: data.message || "응답 생성 실패",
-  speaker_name: selectedCharacter?.name || "AI",
-  message_type: "chat",
-};
+        role: "assistant",
+        content: data.message || "응답 생성 실패",
+        speaker_name: selectedCharacter?.name || "AI",
+        message_type: "chat",
+      };
 
       setMessages((prev) => [...prev, aiMessage]);
 
       await supabase.from("chat_messages").insert({
-  room_id: roomId,
-  user_id: profile.id,
-  role: aiMessage.role,
-  speaker_name: aiMessage.speaker_name,
-  message_type: aiMessage.message_type,
-  content: aiMessage.content,
-});
+        room_id: roomId,
+        user_id: profile.id,
+        role: aiMessage.role,
+        speaker_name: aiMessage.speaker_name,
+        message_type: aiMessage.message_type,
+        content: aiMessage.content,
+      });
 
       await supabase
         .from("chat_rooms")
@@ -580,171 +587,65 @@ if (currentInput) {
     }
   }
 
-function startEditMessage(index: number) {
-  const targetMessage = messages[index];
+  function startEditMessage(index: number) {
+    const targetMessage = messages[index];
 
-  if (!targetMessage?.id) {
-    alert("수정할 메시지 ID를 찾을 수 없습니다.");
-    return;
+    if (!targetMessage?.id) {
+      alert("수정할 메시지 ID를 찾을 수 없습니다.");
+      return;
+    }
+
+    setEditingMessageIndex(index);
+    setEditingMessageId(targetMessage.id);
+    setInput(targetMessage.content);
+    setOpenMessageMenuIndex(null);
   }
 
-  setEditingMessageIndex(index);
-  setEditingMessageId(targetMessage.id);
-  setInput(targetMessage.content);
-  setOpenMessageMenuIndex(null);
-}
+  async function saveEditedMessage() {
+    if (
+      editingMessageIndex === null ||
+      !editingMessageId ||
+      !roomId ||
+      !profile
+    ) {
+      return;
+    }
 
-async function saveEditedMessage() {
-  if (
-    editingMessageIndex === null ||
-    !editingMessageId ||
-    !roomId ||
-    !profile
-  ) {
-    return;
-  }
+    const newContent = input.trim();
 
-  const newContent = input.trim();
+    if (!newContent) {
+      alert("수정할 내용을 입력해주세요.");
+      return;
+    }
 
-  if (!newContent) {
-    alert("수정할 내용을 입력해주세요.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("chat_messages")
-    .update({
-      content: newContent,
-    })
-    .eq("id", editingMessageId)
-    .eq("room_id", roomId);
-
-  if (error) {
-    console.error(error);
-    alert("메시지 수정 중 오류가 발생했습니다.");
-    return;
-  }
-
-  setMessages((prev) =>
-    prev.map((message, index) =>
-      index === editingMessageIndex
-        ? {
-            ...message,
-            content: newContent,
-          }
-        : message
-    )
-  );
-
-  setEditingMessageIndex(null);
-  setEditingMessageId(null);
-  setInput("");
-
-  await supabase
-    .from("chat_rooms")
-    .update({
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", roomId);
-
-  await loadRooms(profile.id);
-}
-
-async function deleteMessagesFrom(index: number) {
-  if (!roomId || !profile) return;
-
-  const targetMessage = messages[index];
-
-  if (!targetMessage?.created_at) {
-    alert("삭제 기준 시간을 찾을 수 없습니다.");
-    return;
-  }
-
-  const ok = confirm("이 메시지부터 이후 대화를 삭제할까요?");
-  if (!ok) return;
-
-  const { error } = await supabase
-    .from("chat_messages")
-    .delete()
-    .eq("room_id", roomId)
-    .gte("created_at", targetMessage.created_at);
-
-  if (error) {
-    console.error(error);
-    alert("삭제 중 오류가 발생했습니다.");
-    return;
-  }
-
-  setMessages(messages.slice(0, index));
-
-  await supabase
-    .from("chat_rooms")
-    .update({
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", roomId);
-
-  await loadRooms(profile.id);
-}
-
-  async function regenerateLastAnswer() {
-  if (!roomId || !profile || loading) return;
-
-  const lastMessage = messages[messages.length - 1];
-
-  if (!lastMessage || lastMessage.role !== "assistant") {
-    alert("재생성할 AI 답변이 없습니다.");
-    return;
-  }
-
-  const messagesWithoutLastAi = messages.slice(0, -1);
-
-  setMessages(messagesWithoutLastAi);
-  setLoading(true);
-
-  try {
-    const relevantLoreEntries = await getRelevantLoreEntries(messagesWithoutLastAi);
-
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: messagesWithoutLastAi,
-        character: selectedCharacter,
-        persona: selectedPersona,
-        worldview: selectedWorldview,
-        loreEntries: relevantLoreEntries,
-      }),
-    });
-
-    const data = await response.json();
-
-    const newAiMessage: ChatMessage = {
-      role: "assistant",
-      content: data.message || "응답 생성 실패",
-      speaker_name: selectedCharacter?.name || "AI",
-      message_type: "chat",
-    };
-
-    setMessages((prev) => [...prev, newAiMessage]);
-
-    await supabase
+    const { error } = await supabase
       .from("chat_messages")
-      .delete()
-      .eq("room_id", roomId)
-      .eq("role", "assistant")
-      .eq("content", lastMessage.content);
+      .update({
+        content: newContent,
+      })
+      .eq("id", editingMessageId)
+      .eq("room_id", roomId);
 
-    await supabase.from("chat_messages").insert({
-      room_id: roomId,
-      user_id: profile.id,
-      role: newAiMessage.role,
-      speaker_name: newAiMessage.speaker_name,
-      message_type: newAiMessage.message_type,
-      content: newAiMessage.content,
-    });
+    if (error) {
+      console.error(error);
+      alert("메시지 수정 중 오류가 발생했습니다.");
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((message, index) =>
+        index === editingMessageIndex
+          ? {
+              ...message,
+              content: newContent,
+            }
+          : message
+      )
+    );
+
+    setEditingMessageIndex(null);
+    setEditingMessageId(null);
+    setInput("");
 
     await supabase
       .from("chat_rooms")
@@ -754,14 +655,122 @@ async function deleteMessagesFrom(index: number) {
       .eq("id", roomId);
 
     await loadRooms(profile.id);
-  } catch (error) {
-    console.error(error);
-    alert("재생성 중 오류가 발생했습니다.");
-    setMessages(messages);
-  } finally {
-    setLoading(false);
   }
-}
+
+  async function deleteMessagesFrom(index: number) {
+    if (!roomId || !profile) return;
+
+    const targetMessage = messages[index];
+
+    if (!targetMessage?.created_at) {
+      alert("삭제 기준 시간을 찾을 수 없습니다.");
+      return;
+    }
+
+    const ok = confirm("이 메시지부터 이후 대화를 삭제할까요?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("chat_messages")
+      .delete()
+      .eq("room_id", roomId)
+      .gte("created_at", targetMessage.created_at);
+
+    if (error) {
+      console.error(error);
+      alert("삭제 중 오류가 발생했습니다.");
+      return;
+    }
+
+    setMessages(messages.slice(0, index));
+
+    await supabase
+      .from("chat_rooms")
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", roomId);
+
+    await loadRooms(profile.id);
+  }
+
+  async function regenerateLastAnswer() {
+    if (!roomId || !profile || loading) return;
+
+    const lastMessage = messages[messages.length - 1];
+
+    if (!lastMessage || lastMessage.role !== "assistant") {
+      alert("재생성할 AI 답변이 없습니다.");
+      return;
+    }
+
+    const messagesWithoutLastAi = messages.slice(0, -1);
+
+    setMessages(messagesWithoutLastAi);
+    setLoading(true);
+
+    try {
+      const relevantLoreEntries = await getRelevantLoreEntries(
+        messagesWithoutLastAi
+      );
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: messagesWithoutLastAi,
+          character: selectedCharacter,
+          persona: selectedPersona,
+          worldview: selectedWorldview,
+          loreEntries: relevantLoreEntries,
+        }),
+      });
+
+      const data = await response.json();
+
+      const newAiMessage: ChatMessage = {
+        role: "assistant",
+        content: data.message || "응답 생성 실패",
+        speaker_name: selectedCharacter?.name || "AI",
+        message_type: "chat",
+      };
+
+      setMessages((prev) => [...prev, newAiMessage]);
+
+      await supabase
+        .from("chat_messages")
+        .delete()
+        .eq("room_id", roomId)
+        .eq("role", "assistant")
+        .eq("content", lastMessage.content);
+
+      await supabase.from("chat_messages").insert({
+        room_id: roomId,
+        user_id: profile.id,
+        role: newAiMessage.role,
+        speaker_name: newAiMessage.speaker_name,
+        message_type: newAiMessage.message_type,
+        content: newAiMessage.content,
+      });
+
+      await supabase
+        .from("chat_rooms")
+        .update({
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", roomId);
+
+      await loadRooms(profile.id);
+    } catch (error) {
+      console.error(error);
+      alert("재생성 중 오류가 발생했습니다.");
+      setMessages(messages);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function logout() {
     await supabase.auth.signOut();
@@ -907,122 +916,129 @@ async function deleteMessagesFrom(index: number) {
           )}
 
           {messages.map((msg, index) => {
-  const isNarration = msg.message_type === "narration";
-  const isUser = msg.role === "user";
+            const isNarration = msg.message_type === "narration";
+            const isUser = msg.role === "user";
+            const avatarUrl = getMessageAvatar(msg);
 
-  if (isNarration) {
-    return (
-      <div key={index} className="flex justify-center">
-        <div className="max-w-[92%] bg-zinc-950 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed">
-          <div className="text-xs text-zinc-500 text-center mb-1">
-            내레이션
-          </div>
-          {renderRoleplayContent(msg.content)}
-        </div>
-      </div>
-    );
-  }
+            if (isNarration) {
+              return (
+                <div key={index} className="flex justify-center">
+                  <div className="max-w-[92%] bg-zinc-950 border border-zinc-800 text-zinc-400 text-sm px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed">
+                    <div className="text-xs text-zinc-500 text-center mb-1">
+                      내레이션
+                    </div>
+                    {renderRoleplayContent(msg.content)}
+                  </div>
+                </div>
+              );
+            }
 
-  return (
-    <div
-      key={index}
-        className={`flex flex-col max-w-[78%] min-w-0 ${
-          isUser ? "ml-auto items-end" : "mr-auto items-start"
-        }`}
-    >
-      <div
-        className={`text-xs mb-1 px-1 ${
-          isUser ? "text-blue-300 text-right" : "text-zinc-400"
-        }`}
-      >
-        {msg.speaker_name || (isUser ? "나" : selectedCharacter?.name || "AI")}
-      </div>
+            return (
+              <div
+                key={index}
+                className={`flex gap-2 max-w-[88%] min-w-0 ${
+                  isUser ? "ml-auto flex-row-reverse" : "mr-auto"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 mt-5">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={msg.speaker_name || "profile"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-zinc-500">
+                      {isUser ? "나" : "AI"}
+                    </div>
+                  )}
+                </div>
 
-      <div
-        className={`whitespace-pre-wrap break-words p-3 rounded-2xl leading-relaxed ${
-          isUser
-            ? "bg-blue-600 text-white rounded-br-md"
-            : "bg-zinc-800 text-white rounded-bl-md"
-        }`}
-      >
-        {renderRoleplayContent(msg.content)}
-      </div>
+                <div
+                  className={`flex flex-col min-w-0 ${
+                    isUser ? "items-end" : "items-start"
+                  }`}
+                >
+                  <div
+                    className={`text-xs mb-1 px-1 ${
+                      isUser ? "text-blue-300 text-right" : "text-zinc-400"
+                    }`}
+                  >
+                    {msg.speaker_name ||
+                      (isUser ? "나" : selectedCharacter?.name || "AI")}
+                  </div>
 
-      <div className="relative mt-2">
-  <button
-    onClick={() =>
-      setOpenMessageMenuIndex(
-        openMessageMenuIndex === index ? null : index
-      )
-    }
-    className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
-  >
-    ⋯
-  </button>
+                  <div
+                    className={`whitespace-pre-wrap break-words p-3 rounded-2xl leading-relaxed ${
+                      isUser
+                        ? "bg-blue-600 text-white rounded-br-md"
+                        : "bg-zinc-800 text-white rounded-bl-md"
+                    }`}
+                  >
+                    {renderRoleplayContent(msg.content)}
+                  </div>
 
-  {openMessageMenuIndex === index && (
-    <div
-      className={`absolute z-20 mt-1 min-w-[130px] rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg overflow-hidden ${
-        isUser ? "right-0" : "left-0"
-      }`}
-    >
-      {!isUser &&
-        msg.message_type !== "narration" &&
-        index === messages.length - 1 && (
-          <button
-            onClick={() => {
-              setOpenMessageMenuIndex(null);
-              regenerateLastAnswer();
-            }}
-            disabled={loading}
-            className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
-          >
-            ↻ 재생성
-          </button>
-        )}
+                  <div className="relative mt-2">
+                    <button
+                      onClick={() =>
+                        setOpenMessageMenuIndex(
+                          openMessageMenuIndex === index ? null : index
+                        )
+                      }
+                      className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
+                    >
+                      ⋯
+                    </button>
 
-      {index === messages.length - 1 && msg.message_type !== "narration" && (
-  <button
-    onClick={() => startEditMessage(index)}
-    disabled={loading}
-    className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
-  >
-    수정
-  </button>
-)}
+                    {openMessageMenuIndex === index && (
+                      <div
+                        className={`absolute z-20 mt-1 min-w-[130px] rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg overflow-hidden ${
+                          isUser ? "right-0" : "left-0"
+                        }`}
+                      >
+                        {!isUser &&
+                          msg.message_type !== "narration" &&
+                          index === messages.length - 1 && (
+                            <button
+                              onClick={() => {
+                                setOpenMessageMenuIndex(null);
+                                regenerateLastAnswer();
+                              }}
+                              disabled={loading}
+                              className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
+                            >
+                              ↻ 재생성
+                            </button>
+                          )}
 
-      <button
-        onClick={() => {
-          setOpenMessageMenuIndex(null);
-          deleteMessagesFrom(index);
-        }}
-        disabled={loading}
-        className="block w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-zinc-900 disabled:text-zinc-700"
-      >
-        여기부터 삭제
-      </button>
-    </div>
-  )}
-</div>
-    </div>
-  );
-})}
+                        {index === messages.length - 1 &&
+                          msg.message_type !== "narration" && (
+                            <button
+                              onClick={() => startEditMessage(index)}
+                              disabled={loading}
+                              className="block w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-900 disabled:text-zinc-700"
+                            >
+                              수정
+                            </button>
+                          )}
 
-{editingMessageId && (
-  <div className="px-3 sm:px-4 py-2 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between text-sm">
-    <span className="text-zinc-400">메시지 수정 중</span>
-    <button
-      onClick={() => {
-        setEditingMessageIndex(null);
-        setEditingMessageId(null);
-        setInput("");
-      }}
-      className="text-zinc-500 hover:text-zinc-300"
-    >
-      취소
-    </button>
-  </div>
-)}
+                        <button
+                          onClick={() => {
+                            setOpenMessageMenuIndex(null);
+                            deleteMessagesFrom(index);
+                          }}
+                          disabled={loading}
+                          className="block w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-zinc-900 disabled:text-zinc-700"
+                        >
+                          여기부터 삭제
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           {loading && (
             <div className="bg-zinc-800 p-3 rounded-2xl max-w-[80%] text-zinc-400">
@@ -1030,6 +1046,22 @@ async function deleteMessagesFrom(index: number) {
             </div>
           )}
         </div>
+
+        {editingMessageId && (
+          <div className="px-3 sm:px-4 py-2 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between text-sm">
+            <span className="text-zinc-400">메시지 수정 중</span>
+            <button
+              onClick={() => {
+                setEditingMessageIndex(null);
+                setEditingMessageId(null);
+                setInput("");
+              }}
+              className="text-zinc-500 hover:text-zinc-300"
+            >
+              취소
+            </button>
+          </div>
+        )}
 
         <div className="p-3 sm:p-4 border-t border-zinc-800 flex gap-2 w-full max-w-full">
           <input
@@ -1041,7 +1073,9 @@ async function deleteMessagesFrom(index: number) {
             disabled={!roomId || loading}
             className="flex-1 min-w-0 bg-zinc-900 rounded-xl px-4 py-3 outline-none disabled:text-zinc-500"
             onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
+              if (e.key === "Enter") {
+                editingMessageId ? saveEditedMessage() : sendMessage();
+              }
             }}
           />
 
@@ -1158,7 +1192,6 @@ function renderRoleplayContent(content: string) {
       {parts.map((part, index) => {
         if (!part) return null;
 
-        // 행동: *문을 연다*
         if (part.startsWith("*") && part.endsWith("*")) {
           return (
             <div
@@ -1170,36 +1203,24 @@ function renderRoleplayContent(content: string) {
           );
         }
 
-        // 생각: (조금 어색하네)
         if (part.startsWith("(") && part.endsWith(")")) {
           return (
-            <div
-              key={index}
-              className="text-zinc-500 text-sm leading-relaxed"
-            >
+            <div key={index} className="text-zinc-500 text-sm leading-relaxed">
               ({part.slice(1, -1)})
             </div>
           );
         }
 
-        // 대사: "안녕?"
         if (part.startsWith('"') && part.endsWith('"')) {
           return (
-            <div
-              key={index}
-              className="text-white leading-relaxed"
-            >
+            <div key={index} className="text-white leading-relaxed">
               {part.slice(1, -1)}
             </div>
           );
         }
 
-        // 아무것도 안 감싼 일반 문장 = 대사
         return (
-          <div
-            key={index}
-            className="text-white leading-relaxed"
-          >
+          <div key={index} className="text-white leading-relaxed">
             {part}
           </div>
         );
