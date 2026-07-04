@@ -1,3 +1,8 @@
+import {
+  createChatCompletion,
+  type AiChatMessage,
+} from "../../../lib/ai-providers";
+
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -98,53 +103,73 @@ function buildSystemPrompt({
 ${buildLoreText(loreEntries)}
 
 중요 규칙:
+- 반드시 한국어로만 답변한다.
+- 영어, 일본어, 중국어 등 외국어를 섞지 않는다.
 - AI는 반드시 [AI 캐릭터] 역할로 대화한다.
 - 사용자는 [사용자 페르소나]로 인식한다.
 - 대화는 [세계관] 안에서 진행한다.
-- [현재 대화에 적용할 로어북 항목]이 있으면 그 설정을 우선 참고한다.
+- 로어북 항목이 있으면 자연스럽게 참고한다.
 - 로어북 내용과 충돌하는 설정을 임의로 만들지 않는다.
 - 세계관의 배경과 규칙을 쉽게 깨지 않는다.
 - 캐릭터와 사용자 관계를 유지한다.
 - 이전 대화 흐름을 참고해서 자연스럽게 이어간다.
+- 너무 설명식으로 답하지 않는다.
+- 번역체를 피하고 자연스러운 한국어 구어체로 답한다.
+- 사용자가 짧게 말하면 AI도 짧고 자연스럽게 답한다.
+- 질문을 매번 덧붙이지 않는다.
 
 [입력 해석 규칙]
 - 사용자의 일반 문장 또는 "큰따옴표" 문장은 실제 대사로 해석한다.
 - *별표로 감싼 문장*은 사용자의 행동 묘사로 해석한다.
 - (괄호로 감싼 문장)은 사용자의 생각 또는 속마음으로 해석한다.
 - 사용자가 행동을 입력하면 캐릭터는 그 행동을 본 것처럼 반응한다.
-- 사용자가 생각을 입력하면 캐릭터는 직접 들은 말처럼 반응하지 말고, 분위기나 표정으로 간접적으로 반응한다.
+- 사용자가 생각을 입력하면 직접 들은 말처럼 반응하지 말고, 분위기나 표정으로 간접적으로 반응한다.
 
 [대화 스타일]
-- 자연스러운 한국어 구어체로 답한다.
-- 번역체, 소설체, 과한 문학적 표현을 피한다.
-- 일상 대화처럼 짧고 자연스럽게 반응한다.
-- 사용자가 짧게 말하면 AI도 짧게 답한다.
+- 기본은 짧은 대화체 답변이다.
 - 행동 묘사는 꼭 필요할 때만 한 줄 이내로 쓴다.
 - 속마음은 자주 쓰지 않는다.
 - 매번 행동 묘사로 시작하지 않는다.
 - 대사는 따옴표 없이 자연스럽게 말해도 된다.
-- 질문을 매번 덧붙이지 않는다.
-- 캐릭터 설정보다 자연스러운 대화 흐름을 우선한다.
-
-[행동/생각 표현]
-- 행동 묘사는 필요할 때만 *행동* 형식으로 짧게 쓴다.
-- 생각은 꼭 필요할 때만 (생각) 형식으로 짧게 쓴다.
 - 한 답변에 행동, 대사, 생각을 모두 넣으려고 하지 않는다.
-- 기본은 짧은 대화체 답변이다.
-
-[좋은 예시]
-응, 나름 버티고 있어.
-너는 좀 괜찮아?
-
-[좋은 예시]
-*살짝 웃는다.*
-그 말 들으니까 조금 낫네.
-
-[나쁜 예시]
-그녀가 팔을 더 꼭 잡아줘.
-그럼, 널 다시 찾아와서 데이트하자.
-
 `.trim();
+}
+
+function toProviderMessages({
+  messages,
+  character,
+  persona,
+  worldview,
+  loreEntries,
+}: {
+  messages: ChatMessage[];
+  character?: CharacterSetting | null;
+  persona?: PersonaSetting | null;
+  worldview?: WorldviewSetting | null;
+  loreEntries?: LoreEntry[];
+}): AiChatMessage[] {
+  const systemPrompt = buildSystemPrompt({
+    character,
+    persona,
+    worldview,
+    loreEntries,
+  });
+
+  const recentMessages: AiChatMessage[] = messages
+    .slice(-20)
+    .filter((message) => message.message_type !== "narration")
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+  return [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+    ...recentMessages,
+  ];
 }
 
 export async function POST(req: Request) {
@@ -164,60 +189,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const recentMessages = messages
-  .slice(-20)
-  .map((message: ChatMessage) => ({
-    role: message.role,
-    content: message.content,
-  }));
+    const providerMessages = toProviderMessages({
+      messages,
+      character,
+      persona,
+      worldview,
+      loreEntries,
+    });
 
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL,
-          messages: [
-            {
-              role: "system",
-              content: buildSystemPrompt({
-                character,
-                persona,
-                worldview,
-                loreEntries,
-              }),
-            },
-            ...recentMessages,
-          ],
-          temperature: 0.65,
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      return Response.json(
-        {
-          message: data.error?.message || "AI API 오류가 발생했습니다.",
-          detail: data,
-        },
-        { status: response.status }
-      );
-    }
+    const result = await createChatCompletion({
+      messages: providerMessages,
+      temperature: Number(process.env.AI_TEMPERATURE || 0.65),
+      maxTokens: Number(process.env.AI_MAX_TOKENS || 700),
+    });
 
     return Response.json({
-      message: data.choices?.[0]?.message?.content || "응답 생성 실패",
+      message: result.message,
+      provider: result.provider,
+      model: result.model,
     });
   } catch (error) {
+    console.error("AI route error:", error);
+
     return Response.json(
       {
-        message: "서버 오류가 발생했습니다.",
-        error: String(error),
+        message: "AI 응답 생성 중 오류가 발생했습니다.",
+        error: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
