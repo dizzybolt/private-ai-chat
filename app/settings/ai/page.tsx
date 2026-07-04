@@ -6,8 +6,6 @@ import { supabase } from "../../../lib/supabase";
 const MODEL_OPTIONS = {
   nvidia: [
     { label: "GLM 5.2", value: "z-ai/glm-5.2" },
-    { label: "Kimi K2 Instruct", value: "moonshotai/kimi-k2-instruct" },
-    { label: "Kimi K2 Thinking", value: "moonshotai/kimi-k2-thinking" },
   ],
   groq: [
     { label: "Llama 3.1 8B Instant", value: "llama-3.1-8b-instant" },
