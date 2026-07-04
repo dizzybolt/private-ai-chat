@@ -7,6 +7,8 @@ export type AiChatMessage = {
 
 type CreateChatCompletionParams = {
   messages: AiChatMessage[];
+  provider?: AiProviderName;
+  model?: string;
   temperature?: number;
   maxTokens?: number;
 };
@@ -22,23 +24,24 @@ function getEnv(name: string, fallback = "") {
   return process.env[name] || fallback;
 }
 
-export function getActiveProviderName(): AiProviderName {
-  const provider = getEnv("AI_PROVIDER", "groq").toLowerCase();
-
+function normalizeProvider(provider?: string): AiProviderName {
   if (provider === "nvidia") return "nvidia";
   if (provider === "openai") return "openai";
   return "groq";
 }
 
-export function getProviderConfig(): ProviderConfig {
-  const provider = getActiveProviderName();
+export function getProviderConfig(
+  providerOverride?: AiProviderName,
+  modelOverride?: string
+): ProviderConfig {
+  const provider = providerOverride || normalizeProvider(getEnv("AI_PROVIDER", "groq"));
 
   if (provider === "nvidia") {
     return {
       name: "nvidia",
       baseUrl: getEnv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
       apiKey: getEnv("NVIDIA_API_KEY"),
-      model: getEnv("NVIDIA_MODEL", "z-ai/glm-5.2"),
+      model: modelOverride || getEnv("NVIDIA_MODEL", "z-ai/glm-5.2"),
     };
   }
 
@@ -47,7 +50,7 @@ export function getProviderConfig(): ProviderConfig {
       name: "openai",
       baseUrl: getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
       apiKey: getEnv("OPENAI_API_KEY"),
-      model: getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+      model: modelOverride || getEnv("OPENAI_MODEL", "gpt-4o-mini"),
     };
   }
 
@@ -55,16 +58,18 @@ export function getProviderConfig(): ProviderConfig {
     name: "groq",
     baseUrl: getEnv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
     apiKey: getEnv("GROQ_API_KEY"),
-    model: getEnv("GROQ_MODEL", getEnv("AI_MODEL", "llama-3.1-8b-instant")),
+    model: modelOverride || getEnv("GROQ_MODEL", getEnv("AI_MODEL", "llama-3.1-8b-instant")),
   };
 }
 
 export async function createChatCompletion({
   messages,
+  provider,
+  model,
   temperature = 0.65,
   maxTokens = 700,
 }: CreateChatCompletionParams) {
-  const config = getProviderConfig();
+  const config = getProviderConfig(provider, model);
 
   if (!config.apiKey) {
     throw new Error(`${config.name} API key가 설정되지 않았습니다.`);

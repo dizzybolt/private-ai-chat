@@ -175,7 +175,7 @@ function toProviderMessages({
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
+    const aiSettings = body.aiSettings || {};
     const messages = body.messages as ChatMessage[];
     const character = body.character as CharacterSetting | null;
     const persona = body.persona as PersonaSetting | null;
@@ -197,11 +197,13 @@ export async function POST(req: Request) {
       loreEntries,
     });
 
-    const result = await createChatCompletion({
-      messages: providerMessages,
-      temperature: Number(process.env.AI_TEMPERATURE || 0.65),
-      maxTokens: Number(process.env.AI_MAX_TOKENS || 700),
-    });
+const result = await createChatCompletion({
+  messages: providerMessages,
+  provider: aiSettings.provider,
+  model: aiSettings.model,
+  temperature: Number(aiSettings.temperature || process.env.AI_TEMPERATURE || 0.65),
+  maxTokens: Number(aiSettings.max_tokens || process.env.AI_MAX_TOKENS || 700),
+});
 
     return Response.json({
       message: result.message,

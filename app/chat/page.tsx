@@ -79,6 +79,13 @@ type LoreEntry = {
   priority: number;
 };
 
+type AiSettings = {
+  provider: "nvidia" | "groq" | "openai";
+  model: string;
+  temperature: number;
+  max_tokens: number;
+};
+
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -87,6 +94,7 @@ export default function ChatPage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [worldviews, setWorldviews] = useState<Worldview[]>([]);
   const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
 
   const [selectedCharacter, setSelectedCharacter] =
     useState<Character | null>(null);
@@ -162,6 +170,7 @@ export default function ChatPage() {
       const loadedWorldviews = await loadWorldviews(user.id);
       const loadedLorebooks = await loadLorebooks(user.id);
 
+      await loadAiSettings(user.id);
       await loadRooms(user.id);
 
       const savedRoomId = localStorage.getItem(`current_room_id_${user.id}`);
@@ -226,6 +235,23 @@ export default function ChatPage() {
     const result = (data || []) as Lorebook[];
     setLorebooks(result);
     return result;
+  }
+
+  async function loadAiSettings(userId: string) {
+    const { data } = await supabase
+      .from("ai_settings")
+      .select("provider, model, temperature, max_tokens")
+      .eq("user_id", userId)
+      .single();
+
+    setAiSettings(
+      data || {
+        provider: "nvidia",
+        model: "z-ai/glm-5.2",
+        temperature: 0.65,
+        max_tokens: 700,
+      }
+    );
   }
 
   async function loadRooms(userId?: string) {
@@ -547,6 +573,7 @@ export default function ChatPage() {
           persona: selectedPersona,
           worldview: selectedWorldview,
           loreEntries: relevantLoreEntries,
+          aiSettings,
         }),
       });
 
@@ -725,6 +752,7 @@ export default function ChatPage() {
           persona: selectedPersona,
           worldview: selectedWorldview,
           loreEntries: relevantLoreEntries,
+          aiSettings,
         }),
       });
 
@@ -863,6 +891,13 @@ export default function ChatPage() {
             className="block w-full bg-zinc-800 text-center rounded-xl py-3 text-sm"
           >
             로어북 설정
+          </a>
+
+          <a
+            href="/settings/ai"
+            className="block w-full bg-zinc-800 text-center rounded-xl py-3 text-sm"
+          >
+            AI 설정
           </a>
 
           <button
