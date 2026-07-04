@@ -91,13 +91,22 @@ export async function createChatCompletion({
 
   const data = await response.json();
 
-  if (!response.ok) {
+    if (!response.ok) {
+    console.error("AI Provider Error:", {
+        provider: config.name,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        status: response.status,
+        data,
+    });
+
     throw new Error(
-      data?.error?.message ||
+        data?.error?.message ||
+        data?.error ||
         data?.message ||
-        `${config.name} API 호출 중 오류가 발생했습니다.`
+        `${config.name} API 호출 실패: ${response.status}`
     );
-  }
+    }
 
   return {
     provider: config.name,
